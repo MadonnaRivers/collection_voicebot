@@ -46,21 +46,31 @@ SARVAM_STT_WS_URL = (
 )
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
-LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4o-mini")
+LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+
+# Orchestrator (voice dialogue brain)
+ORCHESTRATOR_TEMPERATURE    = float(os.getenv("ORCHESTRATOR_TEMPERATURE",    "0.1"))
+ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "28"))
+ORCHESTRATOR_API_RETRIES    = int(os.getenv("ORCHESTRATOR_API_RETRIES",      "3"))
+# Lower = faster answers + less latency (typical Hindi turn fits well under 400)
+ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "400"))
 
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT              = int(os.getenv("PORT",           "5050"))
 TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
+# Post-call JSON (all CRM fields) — e.g. n8n webhook
+CALL_SUMMARY_WEBHOOK_URL = os.getenv("CALL_SUMMARY_WEBHOOK_URL", "").strip()
+
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
 SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "20.0"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
-# 0.3s safe because Sarvam END_SPEECH fires first on normal sentences
-POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.3"))
+# 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences
+POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.2"))
 
 # ── VAD (WebRTC noise gate) ───────────────────────────────────────────────────
 VAD_MODE        = int(os.getenv("VAD_MODE",        "2"))

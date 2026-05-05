@@ -1,9 +1,9 @@
 """
-call_handler.py — WebSocket media-stream handler + conversation FSM.
+call_handler.py — WebSocket media-stream handler + LLM conversation loop.
 
-Receives raw µ-law audio from Twilio, pipes it through:
+Receives raw µ-law audio from Plivo, pipes it through:
   denoiser → VAD → Sarvam STT (WebSocket)
-and drives the scripted EMI collection FSM.
+All dialogue logic and structured data capture run through llm_orchestrator (OpenAI).
 """
 from __future__ import annotations
 
@@ -13,10 +13,8 @@ import audioop
 import concurrent.futures
 import json
 import logging
-import re
 import time
 import wave
-from datetime import date as _date, timedelta
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
@@ -34,16 +32,15 @@ from config import (
     DENOISE_ENABLED, DENOISE_STRENGTH, DENOISE_PROFILE_SEC, DENOISE_STATIONARY,
     HANGUP_GRACE_SEC, SILENCE_TIMEOUT_SEC, BARGE_IN_GUARD_SEC,
     POST_UTTERANCE_PAUSE_SEC, TRANSCRIPTS_DIR,
+    CALL_SUMMARY_WEBHOOK_URL,
 )
+from classifier import finalize_call_variables
+from call_webhook import build_call_summary_push_body, push_call_summary_webhook
 from denoiser import StreamDenoiser
-from tts import tts_stream, tts_rest, tts_stream_pipelined, _strip_wav_header
-from classifier import (
-    classify, llm_extract_amount, extract_callback_time,
-    check_faq, finalize_call_variables, FAQ_TRIGGER_RE,
-)
-from scripts import SCRIPTS, TERMINAL, BARGE_IN_LOCKED, AUTO_ADVANCE
+from llm_orchestrator import run_conversation_turn, conversation_to_storage_text
+from scripts import build_opening_greeting
 from session import CallSession, pending_ctx
-from utils import parse_date, parse_amount, fmt_date, is_callback_time
+from tts import tts_rest, tts_stream_pipelined, _strip_wav_header
 
 log = logging.getLogger("aditi")
 
@@ -122,7 +119,7 @@ def _save_call_audio(sess: "CallSession") -> None:  # type: ignore[name-defined]
 # ─────────────────────────────────────────────────────────────────────────────
 async def media_stream(ws: WebSocket) -> None:
     await ws.accept()
-    log.info("Twilio media stream connected")
+    log.info("Plivo media stream connected")
 
     from scripts import build_default_ctx
     sess  = CallSession(ctx=build_default_ctx())
@@ -131,7 +128,6 @@ async def media_stream(ws: WebSocket) -> None:
     utt_q: asyncio.Queue[str] = asyncio.Queue()
     drained = asyncio.Event()
     drained.set()
-    _tts_cache: dict[str, bytes] = {}   # pre-generated audio keyed by FSM state name
 
     _denoiser = (
         StreamDenoiser(
@@ -292,89 +288,13 @@ async def media_stream(ws: WebSocket) -> None:
                 return f"{{{key}}}"
 
         async def speak(text: str) -> None:
-            text = text.format_map(_SafeMap(sess.ctx))
+            text = text.format_map(_SafeMap(sess.ctx)).strip()
+            if not text:
+                return
             log.info("[ADITI] %s", text)
             record("bot", text=text)
             await play_tts(text)
-
-        async def speak_state(state: str) -> None:
-            script = SCRIPTS.get(state, "")
-            if not script:
-                return
-            cached = _tts_cache.pop(state, None)
-            if cached is not None:
-                # Cache hit — play pre-generated audio, skip TTS round-trip (~400-600 ms saved)
-                text = script.format_map(_SafeMap(sess.ctx))
-                log.info("[ADITI][cached] %.80s", text)
-                record("bot", text=text)
-                abort[0] = False
-                sess.barge_in_active = False
-                sess.tts_started_at   = time.monotonic()
-                _utt_push_start[0]   = time.monotonic()
-                _utt_bytes_pushed[0] = 0
-                sess.speaking = True
-                try:
-                    await push(cached)
-                    if not sess.done:
-                        await send_mark()
-                except Exception as exc:
-                    log.error("cached TTS push error: %s", exc)
-                finally:
-                    sess.speaking = False
-            else:
-                await speak(script)
-
-        # ── TTS pre-cache — runs while opening plays ──────────────────────────
-        # Scripts safe to pre-cache: only use ctx fields that are fixed at call start.
-        # Dynamic fields (payment_date, partial_amount, callback_time) are NOT pre-cached.
-        _PRECACHE_STATES = [
-            # Most-likely first responses (priority order)
-            "full_payment_today", "offer_partial", "callback_ask_time",
-            "future_ask_date", "already_paid_ask_date", "refusal_ask_reason",
-            # Secondary states
-            "refusal_escalate", "refusal_credit_warn", "callback_time_unclear",
-            "partial_ask_amount", "partial_amount_unclear", "partial_amount_too_low",
-            "future_date_retry", "future_date_beyond_90",
-            "date_beyond_90", "partial_date_retry",
-            "already_paid_date_unclear", "already_paid_date_invalid",
-            "unclear_sm1", "unclear_sm2",
-            "beyond_90_penalty_close",
-        ]
-
-        async def _precache_one(state: str) -> None:
-            if sess.done:
-                return
-            script = SCRIPTS.get(state, "")
-            if not script or state in _tts_cache:
-                return
-            try:
-                text = script.format_map(_SafeMap(sess.ctx))
-                buf: list[bytes] = []
-                _stop = [False]
-                async def _col(c: bytes) -> None:
-                    buf.append(c)
-                ok = await tts_stream(text, _col, _stop)
-                if ok and buf and not sess.done:
-                    _tts_cache[state] = b"".join(buf)
-                    log.debug("TTS pre-cached: %s (%d B)", state, len(_tts_cache[state]))
-            except Exception as exc:
-                log.debug("TTS pre-cache %s: %s", state, exc)
-
-        async def _precache_tts_bg() -> None:
-            """
-            Pre-generate TTS for all likely states concurrently while the opening
-            plays (opening takes ~3-5 s — plenty of time to fill the cache).
-            Uses batches of 4 to avoid flooding the HTTP connection pool.
-            """
-            _BATCH = 4
-            for i in range(0, len(_PRECACHE_STATES), _BATCH):
-                if sess.done:
-                    break
-                await asyncio.gather(
-                    *[_precache_one(s) for s in _PRECACHE_STATES[i : i + _BATCH]],
-                    return_exceptions=True,
-                )
-            log.info("TTS pre-cache complete (%d states)", len(_tts_cache))
+            sess.opening_complete = True  # allow barge-in after first bot audio finishes
 
         # ── Hangup ───────────────────────────────────────────────────────────
         async def hangup(reason: str = "unknown") -> None:
@@ -400,12 +320,22 @@ async def media_stream(ws: WebSocket) -> None:
                     await asyncio.sleep(remaining)
             # Now safe to stop recv_ws
             sess.done = True
+            call_vars: dict[str, Any] = {}
             try:
-                call_vars = await finalize_call_variables(reason, sess.ctx)
+                call_vars = await finalize_call_variables(
+                    reason,
+                    sess.ctx,
+                    conversation_to_storage_text(sess.llm_history),
+                ) or {}
                 if call_vars:
                     record("call_summary", **call_vars)
             except Exception as exc:
                 log.warning("call vars error: %s", exc)
+            if CALL_SUMMARY_WEBHOOK_URL and sess.call_sid:
+                wh_body = build_call_summary_push_body(
+                    sess.call_sid, reason, call_vars, state=sess.state
+                )
+                await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
             # Save audio recordings
             try:
                 await asyncio.to_thread(_save_call_audio, sess)
@@ -423,37 +353,9 @@ async def media_stream(ws: WebSocket) -> None:
                 except Exception:
                     pass
 
-        # ── 90-day payment cap (from emi_overdue_date, not today) ────────────
-        def _max_date() -> _date:
-            """Return the 90-day maximum payment date anchored to emi_overdue_date."""
-            raw = sess.ctx.get("emi_overdue_date") or sess.ctx.get("emi_due_date", "")
-            base = parse_date(raw) if raw else None
-            if base is None:
-                base = _date.today()
-            return base + timedelta(days=90)
-
-        # ── FSM transition helper ─────────────────────────────────────────────
-        async def go(state: str, *, reset_unclear: bool = True) -> None:
-            log.info("FSM %s → %s", sess.state, state)
-            sess.state = state
-            if reset_unclear:
-                sess.unclear_count = 0
-            
-            # Ensure target_date is set for terminal states if not already present
-            if state in TERMINAL:
-                if not sess.ctx.get("target_date"):
-                    # Use payment_date or payment_deadline as fallback for target_date
-                    fallback = sess.ctx.get("payment_date") or sess.ctx.get("payment_deadline") or "जल्द ही"
-                    sess.ctx["target_date"] = fallback
-
-            await speak_state(state)
-            if state in TERMINAL:
-                asyncio.create_task(hangup(state))
-
         # ── Carrier WebSocket receiver ────────────────────────────────────────
         async def recv_ws() -> None:
             import base64 as _b64
-            opened = False
             try:
                 async for raw in ws.iter_text():
                     if sess.done:
@@ -468,10 +370,6 @@ async def media_stream(ws: WebSocket) -> None:
                             sess.ctx = pending_ctx.pop(sess.call_sid)
                         log.info("Stream=%s Call=%s", sess.stream_sid, sess.call_sid)
                         record("call_start")
-                        if not opened:
-                            opened = True
-                            asyncio.create_task(speak_state("opening"))
-                            asyncio.create_task(_precache_tts_bg())  # fill cache while opening plays
 
                     elif evt_type == "audio_frame":
                         if sess.done:
@@ -529,6 +427,10 @@ async def media_stream(ws: WebSocket) -> None:
                     pass
 
         # ── Sarvam STT receiver ──────────────────────────────────────────────
+        def _barge_in_allowed() -> bool:
+            """Only mid-call: after opening finishes and before/at closing — not during opening or closing audio."""
+            return sess.opening_complete and not sess.closing_in_progress
+
         async def recv_sarvam_stt() -> None:
             try:
                 async for msg in stt_ws:
@@ -548,8 +450,12 @@ async def media_stream(ws: WebSocket) -> None:
                         signal = str(inner.get("signal_type", "")).upper()
                         if signal == "START_SPEECH" and sess.speaking:
                             _guard_elapsed = time.monotonic() - sess.tts_started_at
-                            if sess.state in BARGE_IN_LOCKED:
-                                log.debug("Barge-in suppressed (locked state: %s)", sess.state)
+                            if not _barge_in_allowed():
+                                log.debug(
+                                    "Barge-in suppressed (opening=%s closing=%s)",
+                                    not sess.opening_complete,
+                                    sess.closing_in_progress,
+                                )
                             elif _guard_elapsed < BARGE_IN_GUARD_SEC:
                                 log.debug("Barge-in suppressed (guard %.0f ms)", _guard_elapsed * 1000)
                             else:
@@ -595,8 +501,11 @@ async def media_stream(ws: WebSocket) -> None:
                             continue
                         if sess.speaking:
                             _guard_elapsed = time.monotonic() - sess.tts_started_at
-                            if sess.state in BARGE_IN_LOCKED:
-                                log.debug("Barge-in suppressed (locked state %s): %s", sess.state, transcript)
+                            if not _barge_in_allowed():
+                                log.debug(
+                                    "Barge-in suppressed (opening/closing): %s",
+                                    transcript,
+                                )
                                 continue
                             elif _guard_elapsed < BARGE_IN_GUARD_SEC:
                                 log.debug("Barge-in suppressed (guard %.0f ms): %s", _guard_elapsed * 1000, transcript)
@@ -629,65 +538,62 @@ async def media_stream(ws: WebSocket) -> None:
                     log.error("STT WebSocket closed unexpectedly — ending call")
                     asyncio.create_task(hangup("stt_failure"))
 
-        # ── FSM ───────────────────────────────────────────────────────────────
-        async def fsm() -> None:
+        # ── LLM conversation (all logic except STT/TTS) ───────────────────
+        async def llm_conversation_loop() -> None:
+            for _ in range(400):
+                if sess.done:
+                    return
+                if sess.call_sid and sess.stream_sid:
+                    break
+                await asyncio.sleep(0.05)
+            else:
+                log.error("call_start never arrived — cannot run LLM loop")
+                return
 
-            async def handle_unclear() -> bool:
-                sess.unclear_count += 1
-                target = (
-                    "unclear_sm1"  if sess.unclear_count == 1 else
-                    "unclear_sm2"  if sess.unclear_count == 2 else
-                    "unclear_close"
+            async def _apply_turn(
+                turn: dict[str, Any],
+                user_msg_for_history: str | None,
+            ) -> bool:
+                patch = turn.get("context_patch")
+                if isinstance(patch, dict):
+                    sess.ctx.update({str(k): str(v) for k, v in patch.items()})
+                sess.state = str(turn.get("call_phase") or "llm")
+                record(
+                    "llm_turn",
+                    call_phase=turn.get("call_phase"),
+                    end_call=bool(turn.get("end_call")),
+                    hangup_reason=turn.get("hangup_reason"),
+                    context_patch=turn.get("context_patch"),
                 )
-                old = sess.state
-                sess.state = target
-                log.info("FSM unclear %d: %s → %s", sess.unclear_count, old, target)
-                record("unclear", target=target)
-                await speak_state(target)
-                if target == "unclear_close":
-                    asyncio.create_task(hangup("no_response"))
+                say = (turn.get("say") or "").strip()
+                if user_msg_for_history is not None:
+                    sess.llm_history.append({"role": "user", "content": user_msg_for_history})
+                if say:
+                    if turn.get("end_call"):
+                        sess.closing_in_progress = True  # no barge-in during final goodbye
+                    await speak(say)
+                    sess.llm_history.append({"role": "assistant", "content": say})
+                elif turn.get("end_call"):
+                    log.warning("LLM requested end_call with empty say")
+                if turn.get("end_call"):
+                    hr = str(turn.get("hangup_reason") or "llm_terminal")
+                    asyncio.create_task(hangup(hr))
                     return True
-                sess.state = AUTO_ADVANCE.get(target, "opening")
                 return False
 
-            async def reroute_intent(utterance: str) -> tuple[bool, bool]:
-                """Check if user changed intent mid-flow. Returns (handled, should_break)."""
-                intent = await classify(utterance, "opening")
-                record("classify", action=intent, context="reroute")
-                if intent == "goto_pay_now":
-                    await go("full_payment_today")
-                    return True, True
-                if intent in ("goto_refusal", "goto_financial_difficulty"):
-                    await go("refusal_ask_reason")
-                    return True, False
-                if intent == "goto_callback":
-                    if is_callback_time(utterance):
-                        sess.ctx["callback_time"] = await extract_callback_time(utterance)
-                        await go("callback_confirm")
-                        return True, True
-                    await go("callback_ask_time")
-                    return True, False
-                if intent == "goto_future_promise":
-                    d = parse_date(utterance)
-                    _today = _date.today()
-                    if d and d > _today:
-                        if d > _max_date():
-                            sess.state = "future_ask_date"
-                            sess.beyond_90_warned = True
-                            await speak_state("future_date_beyond_90")
-                            return True, False
-                        sess.ctx["payment_date"] = fmt_date(d)
-                        await go("future_confirm")
-                        return True, True
-                    await go("future_ask_date")
-                    return True, False
-                if intent == "goto_death":
-                    await go("death_response")
-                    return True, True
-                if intent == "goto_already_paid":
-                    await go("already_paid_ask_date")
-                    return True, False
-                return False, False
+            if not sess.greeting_sent:
+                # ── Instant opening: no LLM round-trip, fires in milliseconds ──
+                opening_text = build_opening_greeting(sess.ctx)
+                turn: dict[str, Any] = {
+                    "say":           opening_text,
+                    "context_patch": {},
+                    "end_call":      False,
+                    "hangup_reason": "",
+                    "call_phase":    "opening",
+                }
+                sess.greeting_sent = True
+                if await _apply_turn(turn, None):
+                    return
 
             while not sess.done:
                 try:
@@ -695,15 +601,20 @@ async def media_stream(ws: WebSocket) -> None:
                 except asyncio.TimeoutError:
                     if sess.done:
                         break
-                    log.info("FSM: %.0f s silence in state=%s", SILENCE_TIMEOUT_SEC, sess.state)
-                    if await handle_unclear():
+                    log.info("LLM: %.0f s silence", SILENCE_TIMEOUT_SEC)
+                    turn = await run_conversation_turn(
+                        sess.ctx,
+                        sess.llm_history,
+                        "[घटना: मौन — ग्राहक ने उत्तर नहीं दिया। संक्षेप में फिर से पूछें या वसूली नीति के अनुसार "
+                        "विनम्र समापन। बोलने योग्य पूरा उत्तर केवल हिंदी देवनागरी में दें।]",
+                    )
+                    if await _apply_turn(turn, "[मौन — कोई उत्तर नहीं]"):
                         break
                     continue
 
                 if sess.done:
                     break
 
-                # Drain late follow-up fragments for same sentence
                 while not utt_q.empty():
                     try:
                         utterance = utt_q.get_nowait()
@@ -712,301 +623,13 @@ async def media_stream(ws: WebSocket) -> None:
 
                 utterance = utterance.strip() or "[silence]"
                 record("user_turn", text=utterance)
-                log.debug("FSM state=%s utterance=%r", sess.state, utterance)
-
-                # ── FAQ cross-state check ─────────────────────────────────────
-                if utterance != "[silence]" and FAQ_TRIGGER_RE.search(utterance):
-                    faq_key = await check_faq(utterance)
-                    if faq_key and faq_key in SCRIPTS:
-                        record("faq", key=faq_key)
-                        log.info("FAQ detected: %s", faq_key)
-                        faq_text = SCRIPTS[faq_key]
-                        if sess.state not in ("opening",) and sess.state in SCRIPTS:
-                            await speak(faq_text + " " + SCRIPTS[sess.state])
-                        else:
-                            await speak(faq_text)
-                        continue
-
-                # ══════════════════════════════════════════════════════════════
-                # ROOT: OPENING
-                # ══════════════════════════════════════════════════════════════
-                if sess.state == "opening":
-                    action = await classify(utterance, "opening")
-                    record("classify", action=action)
-
-                    if action == "goto_pay_now":
-                        sess.ctx["target_date"] = "आज"
-                        await go("full_payment_today")
-                        break
-                    elif action == "goto_partial":
-                        sess.partial_offered = True
-                        await go("partial_ask_amount")
-                    elif action == "goto_future_promise":
-                        d = parse_date(utterance)
-                        _today = _date.today()
-                        if d:
-                            if d > _max_date():
-                                # Date is beyond 90-day cap — tell user and ask again
-                                sess.state = "future_ask_date"
-                                sess.beyond_90_warned = True
-                                await speak_state("future_date_beyond_90")
-                            else:
-                                sess.ctx["payment_date"] = fmt_date(d)
-                                sess.ctx["target_date"] = fmt_date(d)
-                                await go("future_confirm")
-                                break
-                        else:
-                            await go("future_ask_date")
-                    elif action == "goto_already_paid":
-                        await go("already_paid_ask_date")
-                    elif action == "goto_callback":
-                        if is_callback_time(utterance):
-                            t_phrase = await extract_callback_time(utterance)
-                            sess.ctx["callback_time"] = t_phrase
-                            sess.ctx["target_date"] = t_phrase
-                            await go("callback_confirm")
-                            break
-                        await go("callback_ask_time")
-                    elif action == "goto_death":
-                        await go("death_response")
-                        break
-                    elif action == "goto_financial_difficulty" or action == "goto_refusal":
-                        await go("refusal_ask_reason")
-                    elif action == "mark_unclear":
-                        if await handle_unclear():
-                            break
-
-                # ══════════════════════════════════════════════════════════════
-                # C2 BRIDGE: OFFER PARTIAL
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "offer_partial":
-                    action = await classify(utterance, "offer_partial")
-                    record("classify", action=action)
-                    if action == "goto_partial_yes":
-                        # Try to extract the amount from the yes utterance
-                        # e.g. "haan 3000 de sakta hoon" — skip partial_ask_amount if valid
-                        _min_p   = int(sess.ctx.get("min_partial_int", "1500"))
-                        _emi_int = int(re.sub(r"[^0-9]", "", sess.ctx.get("emi_amount_int", "8500")))
-                        _amt = parse_amount(utterance) or await llm_extract_amount(utterance)
-                        if _amt is not None and _amt >= _emi_int:
-                            sess.ctx["target_date"] = "आज"
-                            await go("full_payment_today")
-                            break
-                        elif _amt is not None and _amt >= _min_p:
-                            _remaining = max(0, _emi_int - _amt)
-                            sess.ctx["partial_amount"]    = f"{_amt:,}"
-                            sess.ctx["remaining_balance"] = f"{_remaining:,}"
-                            await go("partial_ask_remaining_date")
-                        else:
-                            await go("partial_ask_amount")
-                    elif action == "goto_callback":
-                        if is_callback_time(utterance):
-                            t_phrase = await extract_callback_time(utterance)
-                            sess.ctx["callback_time"] = t_phrase
-                            sess.ctx["target_date"] = t_phrase
-                            await go("callback_confirm")
-                            break
-                        await go("callback_ask_time")
-                    else:
-                        # Check for death or other intent changes before going to refusal
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await go("refusal_ask_reason")
-
-                # ══════════════════════════════════════════════════════════════
-                # C2: PARTIAL PAYMENT — capture amount
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "partial_ask_amount":
-                    min_p   = int(sess.ctx.get("min_partial_int", "1500"))
-                    emi_int = int(re.sub(r"[^0-9]", "", sess.ctx.get("emi_amount_int", "8500")))
-
-                    _t_low = utterance.lower()
-                    if any(k in _t_low for k in ["aadha", "aadhe", "aadhi", "आधा", "आधे", "half"]):
-                        amount = emi_int // 2
-                    else:
-                        amount = parse_amount(utterance)
-                        if amount is None:
-                            amount = await llm_extract_amount(utterance)
-
-                    # If customer offers full EMI or more → treat as full payment
-                    if amount is not None and amount >= emi_int:
-                        sess.ctx["target_date"] = "आज"
-                        await go("full_payment_today")
-                        break
-
-                    if amount is None:
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await speak_state("partial_amount_unclear")
-                        continue
-
-                    if amount < min_p:
-                        await speak_state("partial_amount_too_low")
-                        continue
-
-                    remaining = max(0, emi_int - amount)
-                    sess.ctx["partial_amount"]    = f"{amount:,}"
-                    sess.ctx["remaining_balance"] = f"{remaining:,}"
-                    sess.partial_attempts = 0
-                    await go("partial_ask_remaining_date")
-
-                # ── C2: remaining balance date ────────────────────────────────
-                elif sess.state == "partial_ask_remaining_date":
-                    d = parse_date(utterance)
-                    today = _date.today()
-                    if d is None:
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await speak_state("partial_date_retry")
-                        continue
-                    
-                    if d > _max_date():
-                        if not sess.beyond_90_warned:
-                            sess.beyond_90_warned = True
-                            await speak_state("date_beyond_90")
-                            continue
-                        await go("beyond_90_penalty_close")
-                        break
-                    
-                    sess.ctx["payment_date"] = fmt_date(d)
-                    sess.ctx["target_date"] = fmt_date(d)
-                    await go("partial_confirm")
+                turn = await run_conversation_turn(sess.ctx, sess.llm_history, utterance)
+                if await _apply_turn(turn, utterance):
                     break
 
-                # ══════════════════════════════════════════════════════════════
-                # C3: FUTURE PAYMENT PROMISE — capture date
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "future_ask_date":
-                    d = parse_date(utterance)
-                    today = _date.today()
-                    if d is None:
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await speak_state("future_date_retry")
-                        continue
-                    
-                    if d > _max_date():
-                        if not sess.beyond_90_warned:
-                            sess.beyond_90_warned = True
-                            await speak_state("future_date_beyond_90")
-                            continue
-                        await go("beyond_90_penalty_close")
-                        break
-                    
-                    sess.ctx["payment_date"] = fmt_date(d)
-                    sess.ctx["target_date"] = fmt_date(d)
-                    await go("future_confirm")
-                    break
+            log.info("LLM loop ended (phase=%s)", sess.state)
 
-                # ══════════════════════════════════════════════════════════════
-                # C5: REFUSAL
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "refusal_ask_reason":
-                    action = await classify(utterance, "refusal_ask_reason")
-                    record("classify", action=action)
-                    if action == "got_reason":
-                        sess.ctx["refusal_reason"] = utterance[:120]
-                        await go("refusal_credit_warn")
-                    else:
-                        await go("refusal_escalate")
-
-                elif sess.state == "refusal_escalate":
-                    action = await classify(utterance, "refusal_escalate")
-                    record("classify", action=action)
-                    if action == "got_reason":
-                        sess.ctx["refusal_reason"] = utterance[:120]
-                    else:
-                        sess.ctx.setdefault("refusal_reason", "Unspecified")
-                    await go("refusal_credit_warn")
-
-                elif sess.state == "refusal_credit_warn":
-                    _rcw_intent = await classify(utterance, "opening")
-                    if _rcw_intent == "goto_death":
-                        await go("death_response")
-                        break
-                    
-                    if is_callback_time(utterance):
-                        t_phrase = await extract_callback_time(utterance)
-                        sess.ctx["callback_time"] = t_phrase
-                        sess.ctx["target_date"] = t_phrase
-                    else:
-                        sess.ctx["callback_time"] = "जल्द ही"
-                        sess.ctx["target_date"] = "जल्द ही"
-                    await go("refusal_close")
-                    break
-
-                # ══════════════════════════════════════════════════════════════
-                # C6: ALREADY PAID
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "already_paid_ask_date":
-                    d = parse_date(utterance)
-                    today = _date.today()
-                    # "कल किया/करा/कर दिया" → yesterday, not tomorrow
-                    # parse_date maps "कल" to today+1 regardless of context
-                    _PAST_RE = re.compile(
-                        r"kiy[ao]|kar[ao]|kar\s*diy[ao]|ho\s*gay[ao]|kar\s*chuk[ao]"
-                        r"|किया|किये|करा|कर\s*दिया|हो\s*गया|कर\s*चुका",
-                        re.IGNORECASE | re.UNICODE,
-                    )
-                    if d == today + timedelta(days=1) and _PAST_RE.search(utterance):
-                        d = today - timedelta(days=1)  # "kal kiya" = yesterday
-                    
-                    if d is None:
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await speak_state("already_paid_date_unclear")
-                        continue
-                    
-                    if d > today:
-                        await speak_state("already_paid_date_invalid")
-                        continue
-                    
-                    sess.ctx["already_paid_date"] = fmt_date(d)
-                    await go("already_paid_ask_mode")
-
-                elif sess.state == "already_paid_ask_mode":
-                    sess.ctx["payment_mode"] = utterance[:80] if utterance != "[silence]" else "not specified"
-                    await go("already_paid_confirm")
-                    break
-
-                # ══════════════════════════════════════════════════════════════
-                # C7: CALLBACK
-                # ══════════════════════════════════════════════════════════════
-                elif sess.state == "callback_ask_time":
-                    if is_callback_time(utterance):
-                        t_phrase = await extract_callback_time(utterance)
-                        sess.ctx["callback_time"] = t_phrase
-                        sess.ctx["target_date"] = t_phrase
-                    else:
-                        # Check for intent change (death, pay now, refusal, etc.)
-                        handled, should_break = await reroute_intent(utterance)
-                        if handled:
-                            if should_break: break
-                            continue
-                        await speak_state("callback_time_unclear")
-                        continue
-                    await go("callback_confirm")
-                    break
-
-                else:
-                    log.warning("FSM: unhandled state %s — skipping utterance", sess.state)
-
-                if sess.done:
-                    break
-
-            log.info("FSM ended (state=%s)", sess.state)
-
-        await asyncio.gather(recv_ws(), recv_sarvam_stt(), fsm())
+        await asyncio.gather(recv_ws(), recv_sarvam_stt(), llm_conversation_loop())
 
     finally:
         _denoise_pool.shutdown(wait=False)

@@ -11,26 +11,23 @@ from utils import fmt_date
 # Default customer data  (.env fallbacks for testing; override per-call via API)
 # ─────────────────────────────────────────────────────────────────────────────
 DEFAULT_CUSTOMER: dict[str, str] = {
-    # ── Core caller inputs ────────────────────────────────────────────────────
-    "customer_name":       os.getenv("DEFAULT_CUSTOMER_NAME",       "Rahul"),
-    "phone_number":        os.getenv("DEFAULT_PHONE_NUMBER",        ""),
-    "loan_id":             os.getenv("DEFAULT_LOAN_ID",             "EH12345"),
-    "emi_overdue_amt":     os.getenv("DEFAULT_EMI_OVERDUE_AMT",     "8,500"),
-    "emi_overdue_amt_int": os.getenv("DEFAULT_EMI_OVERDUE_AMT_INT", "8500"),
-    "emi_overdue_date":    os.getenv("DEFAULT_EMI_OVERDUE_DATE",    "5 March 2026"),
+    # ── Core caller inputs (pass these from your CRM / n8n) ──────────────────
+    "customer_name":    os.getenv("DEFAULT_CUSTOMER_NAME",    "Rahul"),
+    "phone_number":     os.getenv("DEFAULT_PHONE_NUMBER",     ""),
+    "loan_id":          os.getenv("DEFAULT_LOAN_ID",          "EH12345"),
+    "emi_overdue_amt":  os.getenv("DEFAULT_EMI_OVERDUE_AMT",  "8,500"),   # formatted e.g. "8,500"
+    "emi_overdue_date": os.getenv("DEFAULT_EMI_OVERDUE_DATE", "5 March 2026"),
+    "min_partial":      os.getenv("DEFAULT_MIN_PARTIAL",      "1,500"),   # formatted e.g. "1,500"
+    "payment_deadline": os.getenv("DEFAULT_PAYMENT_DEADLINE", ""),
 
-    # ── Supporting fields ─────────────────────────────────────────────────────
-    "lender":              os.getenv("DEFAULT_LENDER",              "Easy Home Finance"),
-    "loan_type":           os.getenv("DEFAULT_LOAN_TYPE",           "Home Loan"),
-    "min_partial":         os.getenv("DEFAULT_MIN_PARTIAL",         "1,500"),
-    "min_partial_int":     os.getenv("DEFAULT_MIN_PARTIAL_INT",     "1500"),
-    "payment_deadline":    os.getenv("DEFAULT_PAYMENT_DEADLINE",    ""),
-
-    # ── Backward-compat aliases ───────────────────────────────────────────────
-    "emi_amount":     os.getenv("DEFAULT_EMI_OVERDUE_AMT",     "8,500"),
-    "emi_amount_int": os.getenv("DEFAULT_EMI_OVERDUE_AMT_INT", "8500"),
-    "emi_due_date":   os.getenv("DEFAULT_EMI_OVERDUE_DATE",    "5 March 2026"),
+    # LLM session flags — set by orchestrator during the call, not by caller
+    "partial_offer_made": "",
 }
+
+
+def _to_int_str(formatted: str) -> str:
+    """'8,500' → '8500' — strip commas so LLM can do arithmetic."""
+    return formatted.replace(",", "").strip()
 
 
 def build_default_ctx() -> dict[str, str]:
@@ -38,28 +35,64 @@ def build_default_ctx() -> dict[str, str]:
     ctx = dict(DEFAULT_CUSTOMER)
     if not ctx.get("payment_deadline"):
         ctx["payment_deadline"] = fmt_date(_date.today() + timedelta(days=7))
-    # Keep aliases in sync with primary fields
+
+    # Derive integer variants internally — callers never need to pass these
     if ctx.get("emi_overdue_amt"):
-        ctx.setdefault("emi_amount",     ctx["emi_overdue_amt"])
-    if ctx.get("emi_overdue_amt_int"):
-        ctx.setdefault("emi_amount_int", ctx["emi_overdue_amt_int"])
-    if ctx.get("emi_overdue_date"):
-        ctx.setdefault("emi_due_date",   ctx["emi_overdue_date"])
+        ctx["emi_amount_int"] = _to_int_str(ctx["emi_overdue_amt"])
+    if ctx.get("min_partial"):
+        ctx["min_partial_int"] = _to_int_str(ctx["min_partial"])
+
+    # Backward-compat aliases so both old and new field names work in LLM prompts
+    ctx.setdefault("emi_amount",    ctx.get("emi_overdue_amt", ""))
+    ctx.setdefault("emi_due_date",  ctx.get("emi_overdue_date", ""))
     return ctx
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instant opening greeting — no LLM needed, fires in milliseconds
+# ─────────────────────────────────────────────────────────────────────────────
+_OPENING_TEMPLATE = (
+    "नमस्ते {customer_name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
+    "आपकी होम लोन की EMI {emi_amount} रुपये {emi_due_date} को बकाया है। "
+    "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+)
+
+
+def build_opening_greeting(ctx: dict[str, str]) -> str:
+    """
+    Build the opening greeting directly from context — zero LLM latency.
+    Falls back gracefully if any key is missing.
+    """
+    name    = ctx.get("customer_name") or ctx.get("name") or "जी"
+    amount  = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
+    due     = ctx.get("emi_due_date") or ctx.get("emi_overdue_date") or ""
+
+    if amount and due:
+        return (
+            f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
+            f"आपकी होम लोन की EMI {amount} रुपये {due} को बकाया है। "
+            "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+        )
+    # Minimal fallback if context is sparse
+    return (
+        f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
+        "आपकी EMI अभी बकाया है। कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Mandatory closing (appended to several terminal scripts)
 # ─────────────────────────────────────────────────────────────────────────────
 _MANDATORY_CLOSING = (
-    "भुगतान पूरा करने के लिए आप दिए गए सुरक्षित भुगतान लिंक का उपयोग कर सकते हैं। "
-    "यदि संभव हो, तो कृपया सुनिश्चित करें कि शेष राशि {target_date} तक चुका दी जाए ताकि आपका क्रेडिट स्कोर सुरक्षित रहे। "
+    "भुगतान पूरा करने के लिए आपको भेजे गए सुरक्षित लिंक का उपयोग करें। "
+    "कृपया {payment_date} तक शेष राशि चुकाने की कोशिश करें "
+    "ताकि आपका क्रेडिट स्कोर सुरक्षित रहे। "
     "आपके सहयोग के लिए धन्यवाद, और आपका दिन शुभ हो।"
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Scripted responses  (Hinglish/Hindi)
+# Scripted responses  (Hinglish)
 # ─────────────────────────────────────────────────────────────────────────────
 SCRIPTS: dict[str, str] = {
     # ── Opening ──────────────────────────────────────────────────────────────
@@ -69,126 +102,112 @@ SCRIPTS: dict[str, str] = {
         "कृपया बताइए आप कब तक भुगतान कर पाएंगे?"
     ),
 
-    # ── Deceased Report ──────────────────────────────────────────────────────
+    # ── C1: Death ────────────────────────────────────────────────────────────
     "death_response": (
-        "मुझे आपके नुकसान के लिए वास्तव में बहुत दुख है। "
-        "कृपया इस कठिन समय में हमारी हार्दिक संवेदना स्वीकार करें। "
-        "हमारी टीम का एक समर्पित सदस्य आगे आपकी सहायता के लिए व्यक्तिगत रूप से आपसे संपर्क करेगा। "
-        "हमें बताने के लिए धन्यवाद।"
+        "मुझे आपके नुकसान के लिए बहुत दुख है। "
+        "इस कठिन समय में हम आपके साथ हैं। "
+        "हमारी टीम का एक सदस्य जल्द ही आपसे व्यक्तिगत रूप से संपर्क करेगा। "
+        "धन्यवाद।"
     ),
 
-    # ── Partial payment ──────────────────────────────────────────────────
+    # ── C2: Partial payment ──────────────────────────────────────────────────
     "offer_partial": (
-        "ठीक है, आंशिक भुगतान (partial payment) के लिए सहमत होने के लिए धन्यवाद। "
-        "कृपया मुझे बताएं कि आप आज कितना भुगतान कर सकते हैं? "
-        "न्यूनतम आंशिक भुगतान राशि ₹1,500 है।"
+        "मैं समझती हूँ कि आप अभी आर्थिक कठिनाई में हैं। "
+        "क्या आप आज आंशिक भुगतान कर सकते हैं? "
+        "न्यूनतम {min_partial} रुपये होना चाहिए।"
     ),
     "partial_ask_amount": (
-        "कृपया मुझे बताएं कि आप आज कितना भुगतान कर सकते हैं? "
-        "न्यूनतम आंशिक भुगतान राशि ₹1,500 है।"
+        "धन्यवाद। आप आज कितनी राशि का भुगतान कर सकते हैं? "
+        "न्यूनतम {min_partial} रुपये होना चाहिए।"
     ),
     "partial_amount_too_low": (
-        "आंशिक भुगतान ₹1,500 से कम स्वीकार्य नहीं है। "
-        "कृपया एक वैध राशि साझा करें।"
+        "यह राशि न्यूनतम से कम है। "
+        "कृपया {min_partial} रुपये या उससे अधिक बताइए।"
     ),
     "partial_amount_unclear": (
-        "माफी चाहती हूँ, मुझे राशि समझ नहीं आई। "
-        "कृपया बताएं कि आप आज कितना भुगतान कर पाएंगे? न्यूनतम राशि ₹1,500 है।"
+        "मुझे राशि समझ नहीं आई। "
+        "कृपया रुपये में बताइए, जैसे दो हजार या तीन हजार।"
     ),
     "partial_ask_remaining_date": (
-        "ठीक है, नोट कर लिया गया है। आज {partial_amount} रुपये के भुगतान के बाद, "
-        "आपकी शेष राशि ₹{remaining_balance} होगी। "
-        "आप शेष राशि कब तक चुकाएंगे?"
+        "धन्यवाद। आज {partial_amount} रुपये के भुगतान के बाद "
+        "{remaining_balance} रुपये शेष रहेंगे। "
+        "आप यह बाकी राशि कब तक चुकाएंगे?"
     ),
     "partial_date_retry": (
         "यह तारीख मान्य नहीं लगी। "
-        "कृपया एक वैध तारीख बताएं जो due date के 90 दिनों के भीतर हो।"
+        "कृपया एक भविष्य की तारीख बताइए जो नब्बे दिनों के अंदर हो।"
     ),
     "date_beyond_90": (
-        "क्षमा करें, यह तारीख स्वीकार्य नहीं है। "
-        "कृपया due date से 90 दिनों के भीतर की कोई तारीख बताएं।"
+        "भुगतान EMI की due date से 90 दिनों के भीतर ही स्वीकार किया जा सकता है। "
+        "कृपया इस अवधि के अंदर एक तारीख बताइए।"
     ),
     "partial_confirm": (
-        "ठीक है, नोट कर लिया गया है। हमने आपकी भुगतान तारीख रिकॉर्ड कर ली है। "
+        "ठीक है, हमने आपकी भुगतान जानकारी नोट कर ली है। "
         + _MANDATORY_CLOSING
     ),
 
-    # ── Future promise ────────────────────────────────────────────────────
-    "future_ask_date": (
-        "पुष्टि करने के लिए धन्यवाद। आप किस तारीख तक भुगतान कर पाएंगे?"
-    ),
+    # ── C3: Future promise ────────────────────────────────────────────────────
+    "future_ask_date":      "धन्यवाद। आप भुगतान किस तारीख तक कर पाएंगे?",
     "future_date_retry": (
-        "क्षमा करें, यह तारीख मान्य नहीं है। कृपया एक सही तारीख बताएं।"
+        "यह तारीख मान्य नहीं लगी। "
+        "कृपया एक भविष्य की तारीख बताइए जो नब्बे दिनों के अंदर हो।"
     ),
     "future_date_beyond_90": (
-        "क्षमा करें, यह तारीख स्वीकार्य नहीं है। "
-        "कृपया due date से 90 दिनों के भीतर की कोई तारीख बताएं।"
+        "भुगतान EMI की due date से 90 दिनों के भीतर ही मान्य होगा। "
+        "कृपया इस सीमा के अंदर एक तारीख बताइए, जैसे अगले महीने या दो महीने बाद।"
     ),
     "future_confirm": (
-        "ठीक है, नोट कर लिया गया है। हमने आपकी भुगतान तारीख रिकॉर्ड कर ली है। "
-        "कृपया सुनिश्चित करें कि भुगतान इस तारीख तक हो जाए ताकि आपके क्रेडिट स्कोर पर कोई असर न पड़े। "
+        "ठीक है, हमने आपकी भुगतान तारीख {payment_date} नोट कर ली है। "
         + _MANDATORY_CLOSING
     ),
 
-    # ── Full payment today ────────────────────────────────────────────────
+    # ── C4: Full payment today ────────────────────────────────────────────────
     "full_payment_today": (
-        "पुष्टि करने के लिए धन्यवाद। कृपया SMS के माध्यम से साझा किए गए भुगतान विकल्प का उपयोग करके "
-        "या अपनी नजदीकी शाखा में जाकर आज ही EMI भुगतान पूरा करें। "
-        "कृपया सुनिश्चित करें कि शेष राशि {payment_date} तक चुका दी जाए ताकि आपका क्रेडिट स्कोर सुरक्षित रहे और पेनल्टी चार्ज से बचा जा सके। "
-        "आपके सहयोग के लिए धन्यवाद, और आपका दिन शुभ हो।"
+        "धन्यवाद। कृपया SMS के माध्यम से भेजे गए सुरक्षित लिंक का उपयोग करके "
+        "या अपनी नजदीकी शाखा में जाकर आज भुगतान पूरा करें। "
+        "आपका दिन शुभ हो।"
     ),
 
-    # ── Cannot Pay (Refusal) ─────────────────────────────────────────────────
-    "refusal_ask_reason": (
-        "बताने के लिए धन्यवाद। क्या मैं पूछ सकती हूँ कि आप अभी भुगतान क्यों नहीं कर पा रहे हैं?"
-    ),
+    # ── C5: Refusal ───────────────────────────────────────────────────────────
+    "refusal_ask_reason":  "समझ गई। क्या आप बता सकते हैं कि आप भुगतान क्यों नहीं कर पा रहे हैं?",
     "refusal_escalate": (
-        "यह जानकारी हमें आपकी बेहतर सहायता करने में मदद करती है। "
-        "क्या कोई विशेष वजह है जिसके लिए आप भुगतान नहीं कर पा रहे?"
+        "मैं समझती हूँ। "
+        "क्या कोई विशेष कारण है जिसकी वजह से आप अभी भुगतान नहीं कर पा रहे?"
     ),
     "refusal_credit_warn": (
-        "ठीक है, नोट कर लिया गया है। हमने इसे अपने सिस्टम में रिकॉर्ड कर लिया है। "
-        "कृपया ध्यान दें कि भुगतान न करने से आपके क्रेडिट स्कोर पर असर पड़ सकता है और पेनल्टी चार्ज लग सकते हैं। "
-        "आप क्या चाहेंगे कि हम आपसे दोबारा आपके EMI भुगतान के संबंध में कब संपर्क करें?"
+        "ठीक है, हमने आपकी बात नोट कर ली है। "
+        "कृपया ध्यान रखें कि बकाया EMI से जुर्माना और CIBIL स्कोर पर असर पड़ सकता है। "
+        "आप चाहेंगे कि हम आपसे दोबारा कब संपर्क करें?"
     ),
     "refusal_close": (
-        "ठीक है, नोट कर लिया गया है। हमने इसे अपने सिस्टम में रिकॉर्ड कर लिया है। "
-        + _MANDATORY_CLOSING
+        "ठीक है, हम आपसे {callback_time} संपर्क करेंगे। "
+        "कृपया {payment_deadline} तक भुगतान करने की कोशिश करें — "
+        "इससे आपका CIBIL स्कोर सुरक्षित रहेगा। "
+        "आपका दिन शुभ हो।"
     ),
 
-    # ── Already paid ──────────────────────────────────────────────────────
-    "already_paid_ask_date": (
-        "हमें बताने के लिए धन्यवाद। हमारे रिकॉर्ड को सत्यापित करने के लिए, "
-        "कृपया मुझे वह तारीख बताएं जिस दिन आपने बकाया EMI का भुगतान किया था?"
-    ),
+    # ── C6: Already paid ──────────────────────────────────────────────────────
+    "already_paid_ask_date":    "कृपया बताइए कि आपने भुगतान किस तारीख को किया था?",
     "already_paid_date_invalid": (
-        "क्षमा करें, आपके द्वारा साझा की गई तारीख भविष्य की है और मान्य नहीं है। "
-        "कृपया वह तारीख साझा करें जो आज या उससे पहले की हो।"
+        "यह भविष्य की तारीख है। "
+        "कृपया वह सही तारीख बताइए जब आपने वास्तव में भुगतान किया था।"
     ),
-    "already_paid_date_unclear": (
-        "माफी चाहती हूँ, तारीख समझ नहीं आई। कृपया फिर से बताएं।"
-    ),
-    "already_paid_ask_mode": (
-        "पुष्टि करने के लिए धन्यवाद। क्या आप मुझे बता सकते हैं कि आपने किस भुगतान माध्यम का उपयोग किया था, "
-        "जैसे कि SMS, शाखा जाकर, या मोबाइल ऐप के माध्यम से?"
-    ),
+    "already_paid_date_unclear": "तारीख समझ नहीं आई। कृपया फिर से बताइए।",
+    "already_paid_ask_mode": "भुगतान किस माध्यम से किया था?",
     "already_paid_confirm": (
-        "विवरण के लिए धन्यवाद। हमें आपकी भुगतान जानकारी प्राप्त हो गई है और हम अपने रिकॉर्ड को सत्यापित और अपडेट करेंगे। "
-        "यदि हमें किसी और चीज़ की आवश्यकता होगी, तो हम आपसे संपर्क करेंगे। धन्यवाद।"
+        "धन्यवाद। हमने आपकी जानकारी प्राप्त कर ली है। "
+        "हम इसे सत्यापित करके अपने रिकॉर्ड अपडेट कर देंगे। "
+        "आपका दिन शुभ हो।"
     ),
 
-    # ── Callback ──────────────────────────────────────────────────────────
-    "callback_ask_time": (
-        "कोई समस्या नहीं है, मैं समझती हूँ। "
-        "कृपया मुझे कॉल बैक के लिए कोई सुविधाजनक तारीख या समय बताएं।"
-    ),
+    # ── C7: Callback ──────────────────────────────────────────────────────────
+    "callback_ask_time":    "कोई बात नहीं। आप बताइए कि मैं आपको कब कॉल करूँ?",
     "callback_time_unclear": (
-        "समय समझ नहीं आया। कृपया फिर से बताइए।"
+        "समय समझ नहीं आया। कृपया फिर से बताइए, जैसे 'कल दोपहर' या 'तीन बजे'।"
     ),
     "callback_confirm": (
-        "धन्यवाद। आपने जो समय बताया है, हम उस समय आपको कॉल करेंगे। "
-        "कृपया पेनल्टी चार्ज से बचने के लिए जल्द से जल्द बकाया EMI चुकाने की कोशिश करें। "
-        "आपका दिन शुभ हो।"
+        "ठीक है, हम आपसे {callback_time} संपर्क करेंगे। "
+        "कृपया कोशिश करें कि EMI जल्दी चुका दें ताकि जुर्माना न लगे।"
     ),
 
     # ── FAQ answers ───────────────────────────────────────────────────────────

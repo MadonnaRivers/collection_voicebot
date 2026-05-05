@@ -56,20 +56,24 @@ async def make_call(
         raise HTTPException(status_code=401, detail="Invalid or missing X-Api-Key")
 
     body = await request.json()
-    to   = (body.get("to") or "").strip()
+    # Accept phone_number as primary; fall back to legacy "to" key
+    to = (body.get("phone_number") or body.get("to") or "").strip()
     if not to:
-        raise HTTPException(status_code=422, detail="`to` (phone number) is required")
+        raise HTTPException(status_code=422, detail="`phone_number` is required")
 
-    ctx = {**build_default_ctx(), **{k: str(v) for k, v in body.items() if k != "to"}}
-    ctx.setdefault("phone_number", to)
+    # Build ctx: defaults → caller overrides (int variants derived inside build_default_ctx)
+    ctx = {**build_default_ctx(), **{k: str(v) for k, v in body.items()}}
+    ctx["phone_number"] = to  # ensure it's always set
 
-    # Keep aliases in sync if caller used the primary field names
-    if ctx.get("emi_overdue_amt"):
+    # Re-derive int variants if caller supplied new formatted values
+    from scripts import _to_int_str
+    if body.get("emi_overdue_amt"):
+        ctx["emi_amount_int"] = _to_int_str(ctx["emi_overdue_amt"])
         ctx["emi_amount"]     = ctx["emi_overdue_amt"]
-    if ctx.get("emi_overdue_amt_int"):
-        ctx["emi_amount_int"] = ctx["emi_overdue_amt_int"]
-    if ctx.get("emi_overdue_date"):
-        ctx["emi_due_date"]   = ctx["emi_overdue_date"]
+    if body.get("min_partial"):
+        ctx["min_partial_int"] = _to_int_str(ctx["min_partial"])
+    if body.get("emi_overdue_date"):
+        ctx["emi_due_date"] = ctx["emi_overdue_date"]
 
     call_sid = await carrier.make_call(to, f"{NGROK_URL}/outgoing-call")
     pending_ctx[call_sid] = ctx
