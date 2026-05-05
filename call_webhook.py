@@ -35,9 +35,11 @@ def build_call_summary_push_body(
     call_sid: str,
     hangup_reason: str,
     call_vars: dict[str, Any] | None,
+    ctx: dict[str, str] | None = None,
     state: str = "",
 ) -> dict[str, Any]:
     cv = dict(call_vars or {})
+    cx = dict(ctx or {})
     body: dict[str, Any] = {
         "call_sid":      call_sid,
         "hangup_reason": hangup_reason,
@@ -54,6 +56,25 @@ def build_call_summary_push_body(
     for k in CALL_SUMMARY_OUTPUT_KEYS:
         if k not in body:
             body[k] = cv.get(k)
+
+    # Always include base customer/loan fields expected by downstream n8n flow.
+    # Prefer classifier output, then fall back to per-call ctx.
+    body["phone_number"] = cv.get("phone_number") or cx.get("phone_number", "")
+    body["customer_name"] = cv.get("customer_name") or cx.get("customer_name", "")
+    body["loan_id"] = cv.get("loan_id") or cx.get("loan_id", "")
+    body["emi_overdue_amt"] = (
+        cv.get("emi_overdue_amt")
+        or cx.get("emi_overdue_amt")
+        or cx.get("emi_amount", "")
+    )
+    body["emi_overdue_date"] = (
+        cv.get("emi_overdue_date")
+        or cx.get("emi_overdue_date")
+        or cx.get("emi_due_date", "")
+    )
+    body["min_partial"] = cv.get("min_partial") or cx.get("min_partial", "")
+    body["payment_deadline"] = cv.get("payment_deadline") or cx.get("payment_deadline", "")
+
     # Pass through any extra fields the LLM classifier added
     for k, v in cv.items():
         if k not in body:

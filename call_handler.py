@@ -7,10 +7,10 @@ All dialogue logic and structured data capture run through llm_orchestrator (Ope
 """
 from __future__ import annotations
 
-import array
 import asyncio
 import audioop
 import concurrent.futures
+import io
 import json
 import logging
 import time
@@ -32,8 +32,9 @@ from config import (
     DENOISE_ENABLED, DENOISE_STRENGTH, DENOISE_PROFILE_SEC, DENOISE_STATIONARY,
     HANGUP_GRACE_SEC, SILENCE_TIMEOUT_SEC, BARGE_IN_GUARD_SEC,
     POST_UTTERANCE_PAUSE_SEC, TRANSCRIPTS_DIR,
-    CALL_SUMMARY_WEBHOOK_URL,
+    CALL_SUMMARY_WEBHOOK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL,
 )
+from clients import http as _http_client
 from classifier import finalize_call_variables
 from call_webhook import build_call_summary_push_body, push_call_summary_webhook
 from denoiser import StreamDenoiser
@@ -47,71 +48,69 @@ log = logging.getLogger("aditi")
 _VAD_HANGOVER_FRAMES = max(1, VAD_HANGOVER_MS // 20)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Audio file saver
-# ─────────────────────────────────────────────────────────────────────────────
-def _save_call_audio(sess: "CallSession") -> None:  # type: ignore[name-defined]
-    """
-    Write per-call WAV files to the transcripts folder:
-      <base>_customer.wav  — customer voice (denoised PCM16, mono, 8 kHz)
-      <base>_bot.wav       — bot TTS output (PCM16, mono, 8 kHz)
-      <base>_combined.wav  — stereo: left=customer, right=bot
-    """
-    from session import CallSession as _CS  # local import avoids circular
-    base = (
-        sess.transcript_path.replace(".jsonl", "")
-        if sess.transcript_path
-        else f"{TRANSCRIPTS_DIR}/unknown_{int(time.time())}"
-    )
-
+def _save_call_audio(sess: "CallSession") -> dict[str, str]:
+    """Build a single mixed call WAV buffer for upload."""
     cust_pcm = b"".join(sess._customer_audio)
-    # Prepend silence to bot audio so it aligns with customer audio in the stereo file
-    # (bot starts speaking ~200ms–3s after call connects; without this, stereo is mis-synced)
-    _bot_offset = max(0, sess._bot_audio_offset_bytes)
-    bot_pcm  = b"\x00" * _bot_offset + b"".join(sess._bot_audio)
-
+    bot_pcm = b"\x00" * max(0, sess._bot_audio_offset_bytes) + b"".join(sess._bot_audio)
     if not cust_pcm and not bot_pcm:
-        log.info("No audio captured — skipping WAV save")
-        return
+        return {}
 
-    # Pad to equal length (2-byte aligned)
     max_len = max(len(cust_pcm), len(bot_pcm))
     if max_len % 2:
         max_len += 1
     cust_pcm = cust_pcm.ljust(max_len, b"\x00")
-    bot_pcm  = bot_pcm.ljust(max_len, b"\x00")
+    bot_pcm = bot_pcm.ljust(max_len, b"\x00")
 
-    def _write_mono(path: str, pcm: bytes) -> None:
-        try:
-            with wave.open(path, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(8000)
-                wf.writeframes(pcm)
-            log.info("Audio saved: %s (%.1f s)", path, len(pcm) / 16000)
-        except Exception as exc:
-            log.warning("WAV write error %s: %s", path, exc)
+    # Mix both sides into one mono stream for phone-call style playback.
+    cust_mix = audioop.mul(cust_pcm, 2, 0.5)
+    bot_mix = audioop.mul(bot_pcm, 2, 0.5)
+    mixed_pcm = audioop.add(cust_mix, bot_mix, 2)
 
-    _write_mono(base + "_customer.wav", cust_pcm)
-    _write_mono(base + "_bot.wav",      bot_pcm)
+    combined_wav_buf = io.BytesIO()
+    with wave.open(combined_wav_buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(8000)
+        wf.writeframes(mixed_pcm)
+    combined_wav = combined_wav_buf.getvalue()
 
-    # Stereo combined: interleave customer (L) + bot (R) samples
-    try:
-        cust_s = array.array("h", cust_pcm)
-        bot_s  = array.array("h", bot_pcm)
-        stereo = array.array("h")
-        for c, b in zip(cust_s, bot_s):
-            stereo.append(c)
-            stereo.append(b)
-        path = base + "_combined.wav"
-        with wave.open(path, "wb") as wf:
-            wf.setnchannels(2)
-            wf.setsampwidth(2)
-            wf.setframerate(8000)
-            wf.writeframes(stereo.tobytes())
-        log.info("Stereo audio saved: %s", path)
-    except Exception as exc:
-        log.warning("Stereo WAV error: %s", exc)
+    transcript_stem = Path(sess.transcript_path).stem if sess.transcript_path else ""
+    call_sid = (sess.call_sid or "unknown").replace("/", "_")
+    loan_id = (
+        sess.ctx.get("loan_id")
+        or sess.ctx.get("loan_account_id")
+        or sess.ctx.get("loan_account_no")
+        or ""
+    ).strip()
+    ident = transcript_stem or (f"{loan_id}_{call_sid}" if loan_id else call_sid)
+
+    return {
+        "id": ident,
+        "loan_id": loan_id,
+        "combined_wav_bytes": combined_wav,
+    }
+
+
+async def _upload_audio_to_n8n(sess: "CallSession") -> bool:
+    if not AUDIO_TRANSCRIPT_WEBHOOK_URL:
+        return False
+    payload = _save_call_audio(sess)
+    if not payload:
+        return False
+    ts_str = datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z"
+    file_name = f"{payload['id']}_combined.wav"
+    files = {
+        "file": (file_name, payload["combined_wav_bytes"], "audio/wav"),
+    }
+    data = {
+        "call_sid": sess.call_sid,
+        "loan_id": payload.get("loan_id", ""),
+        "id": payload["id"],
+        "ts": ts_str,
+    }
+    r = await _http_client.post(AUDIO_TRANSCRIPT_WEBHOOK_URL, data=data, files=files, timeout=90.0)
+    log.info("audio_and_transcripts webhook upload → HTTP %d call=%s", r.status_code, sess.call_sid)
+    return True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,6 +160,9 @@ async def media_stream(ws: WebSocket) -> None:
                 sid = sess.call_sid.replace("/", "_") or "unknown"
                 Path(TRANSCRIPTS_DIR).mkdir(parents=True, exist_ok=True)
                 sess.transcript_path = f"{TRANSCRIPTS_DIR}/{ts}_{sid}.jsonl"
+                if sess.call_sid:
+                    from session import recording_pending
+                    recording_pending[sess.call_sid] = sess.transcript_path
             row = {
                 "ts":    datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z",
                 "event": event, "state": sess.state, "sid": sess.call_sid, **fields,
@@ -195,11 +197,7 @@ async def media_stream(ws: WebSocket) -> None:
                     # Update estimated Plivo drain time: push_start + total_audio_duration
                     _audio_drain_time[0] = _utt_push_start[0] + _utt_bytes_pushed[0] / 8000.0
                     if _push_frame_count[0] == 1:
-                        # Record how many customer PCM16 bytes exist at this moment
-                        # so combined stereo WAV aligns bot audio correctly
                         sess._bot_audio_offset_bytes = sum(len(b) for b in sess._customer_audio)
-                        log.debug("Bot audio offset: %d customer bytes", sess._bot_audio_offset_bytes)
-                    # Capture bot audio (µ-law → PCM16 for WAV)
                     try:
                         sess._bot_audio.append(audioop.ulaw2lin(frame, 2))
                     except Exception:
@@ -333,14 +331,19 @@ async def media_stream(ws: WebSocket) -> None:
                 log.warning("call vars error: %s", exc)
             if CALL_SUMMARY_WEBHOOK_URL and sess.call_sid:
                 wh_body = build_call_summary_push_body(
-                    sess.call_sid, reason, call_vars, state=sess.state
+                    sess.call_sid,
+                    reason,
+                    call_vars,
+                    ctx=sess.ctx,
+                    state=sess.state,
                 )
                 await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
-            # Save audio recordings
             try:
-                await asyncio.to_thread(_save_call_audio, sess)
+                uploaded = await _upload_audio_to_n8n(sess)
+                if uploaded:
+                    record("recording_uploaded", webhook=AUDIO_TRANSCRIPT_WEBHOOK_URL)
             except Exception as exc:
-                log.warning("Audio save error: %s", exc)
+                log.warning("Audio upload to n8n failed: %s", exc)
             await asyncio.sleep(HANGUP_GRACE_SEC)
             if sess.call_sid:
                 try:
@@ -377,7 +380,7 @@ async def media_stream(ws: WebSocket) -> None:
                         mulaw = payload["mulaw"]
                         try:
                             pcm16 = audioop.ulaw2lin(mulaw, 2)
-                            sess._customer_audio.append(pcm16)   # ← capture customer audio
+                            sess._customer_audio.append(pcm16)
                             if _denoiser is not None:
                                 pcm16 = await _loop.run_in_executor(
                                     _denoise_pool, _denoiser.feed_sync, pcm16

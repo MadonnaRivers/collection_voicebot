@@ -9,6 +9,8 @@ from typing import List
 # Populated by /make-call route; consumed by the media-stream WebSocket handler.
 pending_ctx: dict[str, dict[str, str]] = {}
 
+# Optional callback map (kept for compatibility with recording-callback route).
+recording_pending: dict[str, str] = {}
 
 @dataclasses.dataclass
 class CallSession:
@@ -38,8 +40,8 @@ class CallSession:
     # Hangup guard — set synchronously before first await to prevent double-hangup
     _hangup_started: bool = False
 
-    # Audio capture buffers (PCM16, 8000 Hz, mono)
-    _customer_audio:        List[bytes] = dataclasses.field(default_factory=list)
-    _bot_audio:             List[bytes] = dataclasses.field(default_factory=list)
-    # Byte offset into customer audio where bot first started speaking (for stereo alignment)
+    # Local audio capture buffers (PCM16, 8000 Hz, mono)
+    _customer_audio: List[bytes] = dataclasses.field(default_factory=list)
+    _bot_audio: List[bytes] = dataclasses.field(default_factory=list)
+    # Byte offset in customer audio when bot starts speaking (for stereo sync)
     _bot_audio_offset_bytes: int = 0

@@ -57,6 +57,64 @@ async def make_call(to: str, webhook_url: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Recording
+# ─────────────────────────────────────────────────────────────────────────────
+async def start_recording(call_uuid: str, callback_url: str = "") -> str:
+    """
+    Start Plivo server-side recording on a live call.
+    Returns the Plivo recording_id (empty string on failure).
+    callback_url — Plivo will POST the recording URL here when the call ends.
+    """
+    payload: dict = {
+        "time_limit":     3600,
+        "record_channel": "both",        # record both legs (caller + bot TTS)
+        "file_format":    "mp3",
+    }
+    if callback_url:
+        payload["callback_url"]    = callback_url   # Plivo uses snake_case
+        payload["callback_method"] = "POST"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            r = await client.post(
+                f"{_BASE}/Call/{call_uuid}/Record/",
+                auth=_AUTH,
+                json=payload,
+            )
+            log.info(
+                "Plivo start_recording → HTTP %d  body=%s",
+                r.status_code, r.text[:300],
+            )
+            if r.status_code >= 400:
+                return ""
+            body = r.json()
+            rec_id = body.get("recording_id", "")
+            log.info("Plivo recording started — call=%s recording_id=%s", call_uuid, rec_id)
+            return rec_id
+        except Exception as exc:
+            log.warning("Plivo start_recording error: %s", exc)
+            return ""
+
+
+async def get_recording(recording_id: str) -> dict:
+    """
+    Fetch recording metadata from Plivo by recording_id.
+    Returns dict with: recording_id, record_url, recording_duration, call_uuid, etc.
+    """
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            r = await client.get(
+                f"{_BASE}/Recording/{recording_id}/",
+                auth=_AUTH,
+            )
+            r.raise_for_status()
+            return r.json()
+        except Exception as exc:
+            log.warning("Plivo get_recording error: %s", exc)
+            return {}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Hangup
 # ─────────────────────────────────────────────────────────────────────────────
 async def hangup(call_sid: str) -> None:

@@ -46,7 +46,7 @@ SARVAM_STT_WS_URL = (
 )
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
-LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
+LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Orchestrator (voice dialogue brain)
@@ -59,10 +59,20 @@ ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "40
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT              = int(os.getenv("PORT",           "5050"))
 TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
+RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "recordings")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
 # Post-call JSON (all CRM fields) — e.g. n8n webhook
 CALL_SUMMARY_WEBHOOK_URL = os.getenv("CALL_SUMMARY_WEBHOOK_URL", "").strip()
+
+# Plivo will POST recording metadata here when recording is ready (leave blank to disable)
+RECORDING_CALLBACK_URL = os.getenv("RECORDING_CALLBACK_URL", "").strip()
+
+# Webhook to receive combined audio URL + conversation transcript after call ends
+AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
+    "AUDIO_TRANSCRIPT_WEBHOOK_URL",
+    "https://uat-n8n.easyhomefinance.in/webhook/audio_and_transcripts",
+).strip()
 
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
@@ -70,12 +80,12 @@ SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "20.0"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 # 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences
-POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.2"))
+POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.1"))
 
 # ── VAD (WebRTC noise gate) ───────────────────────────────────────────────────
 VAD_MODE        = int(os.getenv("VAD_MODE",        "2"))
-# 200ms = fast END_SPEECH; raise to 350 if trailing syllables get clipped
-VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "200"))
+# 150ms = fast END_SPEECH; raise to 350 if trailing syllables get clipped
+VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "150"))
 VAD_ENABLED     = os.getenv("VAD_ENABLED", "true").lower() not in ("0", "false", "no")
 
 # ── Spectral denoiser ─────────────────────────────────────────────────────────

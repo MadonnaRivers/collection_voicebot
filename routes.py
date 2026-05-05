@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 import carrier
 from clients import http as _http_client
-from config import NGROK_URL, MAKE_CALL_API_KEY
+from config import NGROK_URL, MAKE_CALL_API_KEY, RECORDINGS_DIR, TRANSCRIPTS_DIR, AUDIO_TRANSCRIPT_WEBHOOK_URL
 from urllib.parse import urlparse as _urlparse
 
 # Pre-parse the ngrok hostname once at import time
@@ -106,3 +106,386 @@ async def outgoing_call(request: Request) -> HTMLResponse:
 @app.websocket("/media-stream")
 async def media_stream_route(ws: WebSocket) -> None:
     await media_stream(ws)
+
+
+@app.api_route("/recording-callback", methods=["GET", "POST"])
+async def recording_callback(request: Request) -> JSONResponse:
+    """
+    Plivo POSTs here when a recording is ready.
+    Appends recording metadata as a JSON line in the call's transcript file.
+    Set RECORDING_CALLBACK_URL=https://<ngrok>/recording-callback in .env
+    """
+    import json as _json
+    from datetime import datetime, timezone
+    from session import recording_pending
+
+    # Try every possible encoding Plivo might use
+    data: dict = {}
+    try:
+        # 1. Query-string params (Plivo sometimes uses GET-style params on POST)
+        data = dict(request.query_params)
+        if not data:
+            ct = request.headers.get("content-type", "")
+            if "json" in ct:
+                data = await request.json()
+            else:
+                # form-encoded (application/x-www-form-urlencoded)
+                form = await request.form()
+                data = dict(form)
+    except Exception as exc:
+        log.warning("Recording callback parse error: %s", exc)
+
+    # Always log raw body + headers for debugging
+    try:
+        raw_body = await request.body()
+    except Exception:
+        raw_body = b""
+    log.info(
+        "Recording callback — headers=%s  query=%s  body=%s",
+        dict(request.headers),
+        dict(request.query_params),
+        raw_body[:500],
+    )
+    log.info("Recording callback parsed data: %s", data)
+
+    # Plivo field names vary — handle both casings
+    call_uuid    = data.get("CallUUID")    or data.get("call_uuid",     "")
+    recording_id = data.get("RecordingID") or data.get("recording_id",  "")
+    record_url   = data.get("RecordUrl")   or data.get("record_url",    "") \
+                or data.get("RecordingUrl") or data.get("recording_url", "")
+    duration     = data.get("RecordingDuration") or data.get("recording_duration", "")
+
+    log.info("Recording ready — call=%s duration=%ss url=%s", call_uuid, duration, record_url)
+
+    if not record_url:
+        log.warning("Recording callback received but no URL found in payload — skipping")
+        return JSONResponse({"status": "ok"})
+
+    from datetime import datetime, timezone
+
+    ts_str = datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z"
+    transcript_path = recording_pending.pop(call_uuid, "")
+
+    row = {
+        "ts":            ts_str,
+        "event":         "recording_ready",
+        "call_sid":      call_uuid,
+        "recording_id":  recording_id,
+        "recording_url": record_url,
+        "duration_sec":  duration,
+    }
+
+    # ── 1. Append to transcript JSONL ──────────────────────────────────────────
+    if transcript_path:
+        try:
+            with open(transcript_path, "a", encoding="utf-8") as fh:
+                fh.write(_json.dumps(row, ensure_ascii=False) + "\n")
+            log.info("Recording URL saved to transcript: %s", transcript_path)
+        except OSError as exc:
+            log.warning("Could not write recording to transcript: %s", exc)
+    else:
+        log.warning("No transcript found for call_sid=%s", call_uuid)
+
+    # ── 2. Save recording metadata to recordings/<call_sid>.json ──────────────
+    # This file is the canonical link between a recording and its transcript.
+    # Match key: call_sid  (transcript filename also contains call_sid)
+    try:
+        from pathlib import Path as _Path
+        _Path(RECORDINGS_DIR).mkdir(parents=True, exist_ok=True)
+        rec_meta = {
+            "call_sid":        call_uuid,
+            "recording_id":    recording_id,
+            "recording_url":   record_url,
+            "duration_sec":    duration,
+            "ts":              ts_str,
+            "transcript_file": transcript_path,
+        }
+        rec_path = f"{RECORDINGS_DIR}/{call_uuid}.json"
+        with open(rec_path, "w", encoding="utf-8") as fh:
+            fh.write(_json.dumps(rec_meta, ensure_ascii=False, indent=2) + "\n")
+        log.info("Recording metadata saved: %s", rec_path)
+    except OSError as exc:
+        log.warning("Could not write recording metadata: %s", exc)
+
+    return JSONResponse({"status": "ok"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: push combined recording URL to the n8n webhook
+# Payload is intentionally minimal — just the audio link + call identity.
+# The recording is a single combined MP3 (both caller + bot, record_channel=both).
+# ─────────────────────────────────────────────────────────────────────────────
+async def _push_audio_transcript(
+    call_sid: str,
+    recording_url: str,
+    duration: str,
+    ts_str: str,
+    transcript_path: str,
+) -> None:
+    from pathlib import Path as _Path
+
+    # Build a stable filename for n8n binary storage.
+    # If transcript is known, reuse its stem so calls are easy to correlate.
+    stem = _Path(transcript_path).stem if transcript_path else call_sid
+    file_name = f"{stem}_combined.mp3"
+    try:
+        # 1) Download Plivo-hosted combined MP3
+        dl = await _http_client.get(recording_url, timeout=60.0)
+        dl.raise_for_status()
+        audio_bytes = dl.content
+        if not audio_bytes:
+            log.warning("audio_and_transcripts webhook skipped: empty audio for call=%s", call_sid)
+            return
+
+        # 2) Upload binary to n8n as multipart/form-data (same shape as curl --form file=@...)
+        form_fields = {
+            "call_sid": call_sid,
+            "duration_sec": duration,
+            "ts": ts_str,
+        }
+        files = {
+            "file": (file_name, audio_bytes, "audio/mpeg"),
+        }
+        r = await _http_client.post(
+            AUDIO_TRANSCRIPT_WEBHOOK_URL,
+            data=form_fields,
+            files=files,
+            timeout=90.0,
+        )
+        log.info(
+            "audio_and_transcripts webhook upload → HTTP %d call=%s bytes=%d",
+            r.status_code,
+            call_sid,
+            len(audio_bytes),
+        )
+    except Exception as exc:
+        log.warning("audio_and_transcripts webhook failed: %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Transcript viewer — list + detail pages
+# ─────────────────────────────────────────────────────────────────────────────
+@app.get("/transcripts", response_class=HTMLResponse)
+async def transcripts_list() -> HTMLResponse:
+    """List all call transcripts, newest first."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    files = sorted(
+        _Path(TRANSCRIPTS_DIR).glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    ) if _Path(TRANSCRIPTS_DIR).exists() else []
+
+    rows_html = ""
+    for f in files:
+        call_sid = hangup_reason = recording_url = state = ""
+        try:
+            lines = f.read_text(encoding="utf-8").strip().splitlines()
+            for ln in lines:
+                try:
+                    row = _json.loads(ln)
+                    if not call_sid:
+                        call_sid = row.get("sid", "")
+                    if row.get("event") == "hangup":
+                        hangup_reason = row.get("reason", "")
+                        state         = row.get("state", "")
+                    if row.get("event") == "recording_ready":
+                        recording_url = row.get("recording_url", "")
+                except Exception:
+                    pass
+        except OSError:
+            pass
+
+        rec_badge = (
+            f'<a href="{recording_url}" target="_blank" '
+            f'style="color:#22c55e;font-size:11px;">▶ recording</a>'
+            if recording_url else
+            '<span style="color:#6b7280;font-size:11px;">no recording</span>'
+        )
+        rows_html += f"""
+        <tr onclick="location.href='/transcripts/{f.name}'" style="cursor:pointer">
+          <td>{f.stem[:40]}</td>
+          <td style="color:#94a3b8;font-size:12px">{call_sid[:24]}</td>
+          <td><span class="badge">{state or hangup_reason or '—'}</span></td>
+          <td>{rec_badge}</td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Aditi — Call Transcripts</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:24px}}
+    h1{{font-size:22px;font-weight:700;margin-bottom:20px;color:#f8fafc}}
+    h1 span{{color:#818cf8;font-size:14px;font-weight:400;margin-left:10px}}
+    table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden}}
+    th{{background:#334155;padding:10px 14px;text-align:left;font-size:12px;
+        color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}}
+    td{{padding:10px 14px;font-size:13px;border-bottom:1px solid #334155}}
+    tr:last-child td{{border-bottom:none}}
+    tr:hover td{{background:#273347}}
+    .badge{{background:#312e81;color:#a5b4fc;padding:2px 8px;border-radius:20px;font-size:11px}}
+    a{{color:#818cf8;text-decoration:none}}
+    a:hover{{text-decoration:underline}}
+    .empty{{text-align:center;padding:40px;color:#475569}}
+  </style>
+</head>
+<body>
+  <h1>Call Transcripts <span>{len(files)} calls</span></h1>
+  <table>
+    <thead><tr>
+      <th>File</th><th>Call SID</th><th>Outcome</th><th>Recording</th>
+    </tr></thead>
+    <tbody>
+      {'<tr><td colspan="4" class="empty">No transcripts yet.</td></tr>' if not files else rows_html}
+    </tbody>
+  </table>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+@app.get("/transcripts/{filename}", response_class=HTMLResponse)
+async def transcript_detail(filename: str) -> HTMLResponse:
+    """Render a single transcript as a chat-bubble conversation."""
+    import json as _json
+    from pathlib import Path as _Path
+
+    if not filename.endswith(".jsonl") or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    path = _Path(TRANSCRIPTS_DIR) / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Transcript not found")
+
+    events = []
+    try:
+        for line in path.read_text(encoding="utf-8").strip().splitlines():
+            try:
+                events.append(_json.loads(line))
+            except Exception:
+                pass
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    call_sid = hangup_reason = state = recording_url = duration = ""
+    summary_fields: dict = {}
+    bubbles_html = ""
+
+    for row in events:
+        evt  = row.get("event", "")
+        text = (row.get("text") or "").strip()
+        ts   = row.get("ts", "")[:19].replace("T", " ")
+
+        if evt == "call_start":
+            call_sid = row.get("sid", "")
+            bubbles_html += f'<div class="sys-evt">📞 Call started &nbsp;·&nbsp; {ts}</div>'
+
+        elif evt == "bot" and text:
+            bubbles_html += f"""
+            <div class="row agent-row">
+              <div class="av agent-av">AI</div>
+              <div>
+                <div class="bubble agent-bubble">{text}</div>
+                <div class="ts">{ts}</div>
+              </div>
+            </div>"""
+
+        elif evt in ("user", "user_turn") and text:
+            bubbles_html += f"""
+            <div class="row user-row">
+              <div>
+                <div class="bubble user-bubble">{text}</div>
+                <div class="ts" style="text-align:right">{ts}</div>
+              </div>
+              <div class="av user-av">👤</div>
+            </div>"""
+
+        elif evt == "hangup":
+            hangup_reason = row.get("reason", "")
+            state         = row.get("state", "")
+            bubbles_html += f'<div class="sys-evt">📵 Call ended &nbsp;·&nbsp; {hangup_reason} &nbsp;·&nbsp; {ts}</div>'
+
+        elif evt == "call_summary":
+            summary_fields = {k: v for k, v in row.items()
+                              if k not in ("ts", "event", "state", "sid")}
+
+        elif evt == "recording_ready":
+            recording_url = row.get("recording_url", "")
+            duration      = str(row.get("duration_sec", ""))
+
+    sum_rows = "".join(
+        f"<tr><td>{k}</td><td>{v}</td></tr>"
+        for k, v in summary_fields.items() if v not in (None, "")
+    )
+    summary_html = f"""
+    <div class="card" style="margin-top:20px">
+      <div class="card-title">📋 Call Summary</div>
+      <table class="stbl"><tbody>{sum_rows}</tbody></table>
+    </div>""" if sum_rows else ""
+
+    recording_html = f"""
+    <div class="card" style="margin-top:14px">
+      <div class="card-title">🎙️ Call Recording &nbsp;<span style="font-weight:400;color:#64748b">{duration}s</span></div>
+      <audio controls style="width:100%;margin-top:6px;accent-color:#818cf8">
+        <source src="{recording_url}" type="audio/mpeg">
+        <a href="{recording_url}" target="_blank" style="color:#818cf8">Download MP3</a>
+      </audio>
+    </div>""" if recording_url else ""
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Transcript · {filename}</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;
+          padding:20px;max-width:800px;margin:0 auto}}
+    .back{{color:#818cf8;font-size:13px;text-decoration:none;display:inline-block;margin-bottom:16px}}
+    .back:hover{{text-decoration:underline}}
+    h1{{font-size:17px;font-weight:700;color:#f8fafc;margin-bottom:4px;word-break:break-all}}
+    .meta{{font-size:12px;color:#64748b;margin-bottom:20px}}
+    .chat-box{{background:#1e293b;border-radius:12px;padding:16px 20px;
+               display:flex;flex-direction:column;gap:14px}}
+    .row{{display:flex;align-items:flex-end;gap:10px}}
+    .agent-row{{justify-content:flex-start}}
+    .user-row{{justify-content:flex-end}}
+    .av{{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;
+         justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}}
+    .agent-av{{background:#312e81;color:#a5b4fc}}
+    .user-av{{background:#14532d;color:#86efac;font-size:16px}}
+    .bubble{{padding:10px 14px;border-radius:16px;max-width:540px;
+             font-size:14px;line-height:1.6;word-break:break-word}}
+    .agent-bubble{{background:#1e3a5f;color:#bfdbfe;border-bottom-left-radius:4px}}
+    .user-bubble{{background:#14532d;color:#dcfce7;border-bottom-right-radius:4px}}
+    .ts{{font-size:10px;color:#475569;margin-top:3px;padding:0 4px}}
+    .sys-evt{{text-align:center;font-size:11px;color:#475569;background:#0f172a;
+              padding:4px 14px;border-radius:20px;align-self:center;margin:0 auto}}
+    .card{{background:#1e293b;border-radius:10px;padding:14px 16px}}
+    .card-title{{font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:10px}}
+    .stbl{{width:100%;border-collapse:collapse;font-size:13px}}
+    .stbl td{{padding:5px 8px;border-bottom:1px solid #334155}}
+    .stbl td:first-child{{color:#94a3b8;width:42%;font-size:12px}}
+    .stbl tr:last-child td{{border-bottom:none}}
+    a{{color:#818cf8;text-decoration:none}}
+    a:hover{{text-decoration:underline}}
+  </style>
+</head>
+<body>
+  <a class="back" href="/transcripts">← All calls</a>
+  <h1>{filename}</h1>
+  <div class="meta">Call SID: {call_sid or '—'} &nbsp;·&nbsp; Outcome: {state or hangup_reason or '—'}</div>
+  <div class="chat-box">
+    {bubbles_html or '<div class="sys-evt">No conversation events found.</div>'}
+  </div>
+  {recording_html}
+  {summary_html}
+</body>
+</html>"""
+    return HTMLResponse(html)
