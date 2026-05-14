@@ -47,6 +47,65 @@ async def health() -> JSONResponse:
     return JSONResponse({"status": "ok", "llm": LLM_MODEL, "voice": SARVAM_VOICE})
 
 
+@app.get("/debug")
+async def debug() -> JSONResponse:
+    """Diagnose config + connectivity — call this when something breaks."""
+    import websockets as _ws
+    from config import (
+        NGROK_URL, SARVAM_STT_WS_URL, SARVAM_API_KEY,
+        LLM_MODEL, SARVAM_VOICE, PORT,
+        PLIVO_AUTH_ID, PLIVO_PHONE_NUMBER,
+        RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL,
+    )
+
+    # Check Sarvam STT reachability
+    stt_ok = False
+    stt_err = ""
+    try:
+        import asyncio as _asyncio
+        conn = await _asyncio.wait_for(
+            _ws.connect(
+                SARVAM_STT_WS_URL,
+                extra_headers={"Api-Subscription-Key": SARVAM_API_KEY},
+            ),
+            timeout=5.0,
+        )
+        await conn.close()
+        stt_ok = True
+    except Exception as exc:
+        stt_err = str(exc)
+
+    return JSONResponse({
+        "server": {
+            "ngrok_url":  NGROK_URL,
+            "ws_host":    _WS_HOST,
+            "port":       PORT,
+        },
+        "plivo": {
+            "auth_id":           PLIVO_AUTH_ID[:6] + "…",
+            "phone_number":      PLIVO_PHONE_NUMBER,
+            "recording_callback": RECORDING_CALLBACK_URL or "(not set)",
+        },
+        "sarvam_stt": {
+            "url": SARVAM_STT_WS_URL,
+            "reachable": stt_ok,
+            "error":     stt_err or None,
+        },
+        "llm":   LLM_MODEL,
+        "voice": SARVAM_VOICE,
+        "audio_transcript_webhook": AUDIO_TRANSCRIPT_WEBHOOK_URL or "(not set)",
+    })
+
+
+@app.websocket("/ws-ping")
+async def ws_ping(ws: WebSocket) -> None:
+    """WebSocket reachability test — connect to wss://HOST/ws-ping and expect 'pong'."""
+    await ws.accept()
+    await ws.send_text("pong")
+    await ws.close()
+    log.info("ws-ping: connection OK")
+
+
 @app.post("/make-call")
 async def make_call(
     request: Request,

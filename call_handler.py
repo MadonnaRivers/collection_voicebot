@@ -142,13 +142,28 @@ async def media_stream(ws: WebSocket) -> None:
     _vad_inst           = webrtcvad.Vad(VAD_MODE) if VAD_ENABLED else None
     _vad_hangover_left  = [0]
 
-    try:
-        stt_ws = await websockets.connect(
-            SARVAM_STT_WS_URL,
-            extra_headers={"Api-Subscription-Key": SARVAM_API_KEY},
-        )
-    except Exception as exc:
-        log.error("Cannot connect to Sarvam STT: %s", exc)
+    # ── Connect to Sarvam STT with retries ──────────────────────────────────
+    stt_ws = None
+    for _attempt in range(4):
+        try:
+            stt_ws = await asyncio.wait_for(
+                websockets.connect(
+                    SARVAM_STT_WS_URL,
+                    extra_headers={"Api-Subscription-Key": SARVAM_API_KEY},
+                    ping_interval=20,
+                    ping_timeout=10,
+                ),
+                timeout=8.0,
+            )
+            log.info("Sarvam STT connected (attempt %d)", _attempt + 1)
+            break
+        except Exception as exc:
+            log.warning("STT connect attempt %d/4 failed: %s", _attempt + 1, exc)
+            if _attempt < 3:
+                await asyncio.sleep(0.8)
+
+    if stt_ws is None:
+        log.error("Cannot connect to Sarvam STT after 4 attempts — dropping call")
         await ws.close()
         return
 
@@ -435,6 +450,7 @@ async def media_stream(ws: WebSocket) -> None:
             return sess.opening_complete and not sess.closing_in_progress
 
         async def recv_sarvam_stt() -> None:
+            nonlocal stt_ws
             try:
                 async for msg in stt_ws:
                     if sess.done:
@@ -538,8 +554,37 @@ async def media_stream(ws: WebSocket) -> None:
                     log.error("STT recv error: %s", exc)
             finally:
                 if not sess.done:
-                    log.error("STT WebSocket closed unexpectedly — ending call")
-                    asyncio.create_task(hangup("stt_failure"))
+                    # ── Try to reconnect STT once before ending the call ──────
+                    log.warning("STT WebSocket dropped — attempting reconnect …")
+                    reconnected = False
+                    for _r in range(3):
+                        try:
+                            new_ws = await asyncio.wait_for(
+                                websockets.connect(
+                                    SARVAM_STT_WS_URL,
+                                    extra_headers={"Api-Subscription-Key": SARVAM_API_KEY},
+                                    ping_interval=20,
+                                    ping_timeout=10,
+                                ),
+                                timeout=6.0,
+                            )
+                            stt_ws = new_ws
+                            reconnected = True
+                            log.info("STT reconnected (attempt %d)", _r + 1)
+                            # Re-enter the receive loop with the new socket
+                            async for msg in stt_ws:
+                                if sess.done:
+                                    break
+                                if isinstance(msg, bytes):
+                                    continue
+                                # (minimal passthrough — just keep the call alive)
+                            break
+                        except Exception as exc2:
+                            log.warning("STT reconnect attempt %d failed: %s", _r + 1, exc2)
+                            await asyncio.sleep(0.5)
+                    if not reconnected and not sess.done:
+                        log.error("STT reconnect failed — ending call")
+                        asyncio.create_task(hangup("stt_failure"))
 
         # ── LLM conversation (all logic except STT/TTS) ───────────────────
         async def llm_conversation_loop() -> None:
