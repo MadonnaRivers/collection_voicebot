@@ -38,7 +38,7 @@ from clients import http as _http_client
 from classifier import finalize_call_variables
 from call_webhook import build_call_summary_push_body, push_call_summary_webhook
 from denoiser import StreamDenoiser
-from llm_orchestrator import run_conversation_turn, conversation_to_storage_text
+from llm_orchestrator import run_conversation_turn, stream_conversation_turn, conversation_to_storage_text
 from scripts import build_opening_greeting
 from session import CallSession, pending_ctx
 from tts import tts_rest, tts_stream_pipelined, _strip_wav_header
@@ -629,6 +629,88 @@ async def media_stream(ws: WebSocket) -> None:
                     return True
                 return False
 
+            # ── Streaming turn: TTS fires as soon as 'say' arrives ───────────
+            async def _stream_apply_turn(
+                llm_input: str,
+                user_msg_for_history: str | None,
+            ) -> bool:
+                """
+                Run the LLM as a stream.  TTS starts the moment the 'say' field
+                is extracted — before call_phase / end_call / context_patch arrive.
+                Returns True if the call should end.
+                """
+                say_ready  = asyncio.Event()
+                say_holder = [""]
+                turn_holder: list[dict[str, Any]] = [{}]
+
+                async def _on_say(text: str) -> None:
+                    say_holder[0] = text
+                    say_ready.set()
+
+                async def _llm_bg() -> None:
+                    result = await stream_conversation_turn(
+                        sess.ctx, sess.llm_history, llm_input, _on_say
+                    )
+                    turn_holder[0] = result
+                    say_ready.set()   # always unblock even if on_say wasn't called
+
+                llm_task = asyncio.create_task(_llm_bg())
+
+                # Wait for say text, then start TTS immediately
+                await say_ready.wait()
+                say_text = say_holder[0].strip()
+
+                tts_task: asyncio.Task | None = None
+                if say_text and not sess.done:
+                    fmt = say_text.format_map(_SafeMap(sess.ctx)).strip()
+                    if fmt:
+                        log.info("[ADITI] %s", fmt)
+                        record("bot", text=fmt)
+                        tts_task = asyncio.create_task(play_tts(fmt))
+
+                # Wait for the rest of the JSON (metadata)
+                await llm_task
+                turn = turn_holder[0] or {
+                    "say": say_text, "context_patch": {}, "end_call": False,
+                    "hangup_reason": "", "call_phase": "llm",
+                }
+
+                # Apply metadata (context_patch, state, log)
+                patch = turn.get("context_patch")
+                if isinstance(patch, dict):
+                    sess.ctx.update({str(k): str(v) for k, v in patch.items()})
+                sess.state = str(turn.get("call_phase") or "llm")
+                record(
+                    "llm_turn",
+                    call_phase=turn.get("call_phase"),
+                    end_call=bool(turn.get("end_call")),
+                    hangup_reason=turn.get("hangup_reason"),
+                    context_patch=turn.get("context_patch"),
+                )
+
+                # Add user turn to history before assistant
+                if user_msg_for_history is not None:
+                    sess.llm_history.append({"role": "user", "content": user_msg_for_history})
+
+                # Mark closing before TTS finishes so barge-in is suppressed
+                if turn.get("end_call"):
+                    sess.closing_in_progress = True
+
+                # Wait for TTS to finish
+                if tts_task:
+                    await tts_task
+                    if say_text:
+                        sess.llm_history.append({"role": "assistant", "content": say_text})
+                    sess.opening_complete = True
+                elif not tts_task and turn.get("end_call"):
+                    log.warning("LLM requested end_call with empty say")
+
+                if turn.get("end_call"):
+                    hr = str(turn.get("hangup_reason") or "llm_terminal")
+                    asyncio.create_task(hangup(hr))
+                    return True
+                return False
+
             if not sess.greeting_sent:
                 # ── Instant opening: no LLM round-trip, fires in milliseconds ──
                 opening_text = build_opening_greeting(sess.ctx)
@@ -650,13 +732,11 @@ async def media_stream(ws: WebSocket) -> None:
                     if sess.done:
                         break
                     log.info("LLM: %.0f s silence", SILENCE_TIMEOUT_SEC)
-                    turn = await run_conversation_turn(
-                        sess.ctx,
-                        sess.llm_history,
+                    if await _stream_apply_turn(
                         "[घटना: मौन — ग्राहक ने उत्तर नहीं दिया। संक्षेप में फिर से पूछें या वसूली नीति के अनुसार "
                         "विनम्र समापन। बोलने योग्य पूरा उत्तर केवल हिंदी देवनागरी में दें।]",
-                    )
-                    if await _apply_turn(turn, "[मौन — कोई उत्तर नहीं]"):
+                        "[मौन — कोई उत्तर नहीं]",
+                    ):
                         break
                     continue
 
@@ -671,8 +751,7 @@ async def media_stream(ws: WebSocket) -> None:
 
                 utterance = utterance.strip() or "[silence]"
                 record("user_turn", text=utterance)
-                turn = await run_conversation_turn(sess.ctx, sess.llm_history, utterance)
-                if await _apply_turn(turn, utterance):
+                if await _stream_apply_turn(utterance, utterance):
                     break
 
             log.info("LLM loop ended (phase=%s)", sess.state)

@@ -54,7 +54,7 @@ ORCHESTRATOR_TEMPERATURE    = float(os.getenv("ORCHESTRATOR_TEMPERATURE",    "0.
 ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "28"))
 ORCHESTRATOR_API_RETRIES    = int(os.getenv("ORCHESTRATOR_API_RETRIES",      "3"))
 # Lower = faster answers + less latency (typical Hindi turn fits well under 400)
-ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "400"))
+ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "300"))
 
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT              = int(os.getenv("PORT",           "5050"))
@@ -80,12 +80,12 @@ SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "20.0"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 # 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences
-POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.1"))
+POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.05"))
 
 # ── VAD (WebRTC noise gate) ───────────────────────────────────────────────────
 VAD_MODE        = int(os.getenv("VAD_MODE",        "2"))
-# 150ms = fast END_SPEECH; raise to 350 if trailing syllables get clipped
-VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "150"))
+# 100ms = fast END_SPEECH; raise to 200 if trailing syllables get clipped
+VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "100"))
 VAD_ENABLED     = os.getenv("VAD_ENABLED", "true").lower() not in ("0", "false", "no")
 
 # ── Spectral denoiser ─────────────────────────────────────────────────────────

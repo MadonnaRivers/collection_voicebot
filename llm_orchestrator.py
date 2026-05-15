@@ -8,7 +8,7 @@ import json
 import logging
 import re
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 
@@ -242,6 +242,107 @@ async def run_conversation_turn(
     except Exception as exc2:
         log.error("orchestrator repair failed: %s (prior: %s)", exc2, last_exc)
         return _failure_hindi()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Streaming turn — fires TTS the moment 'say' is ready, saves ~200-400 ms
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Matches the complete "say" string value inside a partial JSON stream.
+# Works because the LLM always emits "say" first in the JSON object.
+_SAY_RE = re.compile(r'"say"\s*:\s*"((?:[^"\\]|\\.)*)"')
+
+
+def _extract_say_from_stream(text: str) -> str | None:
+    """Return the 'say' value once fully present in the streamed buffer."""
+    m = _SAY_RE.search(text)
+    if not m:
+        return None
+    raw = m.group(1)
+    return (
+        raw.replace('\\"', '"')
+           .replace("\\n", " ")
+           .replace("\\t", " ")
+           .replace("\\\\", "\\")
+    )
+
+
+async def stream_conversation_turn(
+    ctx: dict[str, str],
+    history: list[dict[str, str]],
+    user_message: str,
+    on_say: Callable[[str], Awaitable[None]],
+) -> dict[str, Any]:
+    """
+    Streaming version of run_conversation_turn.
+
+    Calls on_say(say_text) as soon as the 'say' field is fully present in the
+    token stream — typically after ~half the tokens — so TTS can start while
+    the LLM is still generating call_phase / end_call / context_patch.
+
+    Falls back to run_conversation_turn on any error, always calling on_say.
+    """
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": _system_content(ctx)},
+        *_trim_history(history),
+        {"role": "user", "content": user_message},
+    ]
+    _is_opening_event = user_message.strip().startswith(("[EVENT:", "[घटना:"))
+
+    accumulated = ""
+    say_fired   = False
+
+    try:
+        stream = await oai_llm.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages,
+            temperature=ORCHESTRATOR_TEMPERATURE,
+            max_tokens=ORCHESTRATOR_MAX_TOKENS,
+            response_format={"type": "json_object"},
+            stream=True,
+        )
+
+        async for chunk in stream:
+            delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
+            accumulated += delta
+            if not say_fired:
+                say = _extract_say_from_stream(accumulated)
+                if say:
+                    say_fired = True
+                    await on_say(say)
+
+        if not accumulated.strip():
+            fallback = _fallback_hindi()
+            if not say_fired:
+                await on_say(fallback["say"])
+            return fallback
+
+        out    = _parse_json_object(accumulated)
+        result = _normalize(out)
+        if _is_opening_event:
+            result = dict(result, call_phase="opening")
+
+        # Safety: fire on_say if regex never matched (unusual JSON ordering)
+        if not say_fired:
+            await on_say(result["say"] or _fallback_hindi()["say"])
+
+        if not result["say"] and not result["end_call"]:
+            return _fallback_hindi()
+        return result
+
+    except Exception as exc:
+        log.error("stream_conversation_turn error: %s — falling back", exc)
+        try:
+            result = await run_conversation_turn(ctx, history, user_message)
+            if not say_fired:
+                await on_say(result.get("say") or _fallback_hindi()["say"])
+            return result
+        except Exception as exc2:
+            log.error("fallback run_conversation_turn also failed: %s", exc2)
+            fallback = _failure_hindi()
+            if not say_fired:
+                await on_say(fallback["say"])
+            return fallback
 
 
 def conversation_to_storage_text(history: list[dict[str, str]]) -> str:
