@@ -72,10 +72,14 @@ async def transcripts_list() -> HTMLResponse:
 
         outcome = state or hangup_reason or "—"
         badge_color = {
-            "ptp": "#166534", "payment_confirm": "#14532d",
-            "already_paid": "#1e3a5f", "partial": "#713f12",
-            "cannot_pay": "#7f1d1d", "callback": "#312e81",
-            "no_response": "#374151",
+            "ptp":             "#166534",
+            "payment_confirm": "#14532d",
+            "already_paid":    "#1e3a5f",
+            "partial":         "#713f12",
+            "cannot_pay":      "#7f1d1d",
+            "callback":        "#312e81",
+            "deceased":        "#450a0a",
+            "no_response":     "#374151",
         }.get(outcome, "#1e293b")
 
         rec_badge = (

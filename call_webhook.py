@@ -11,6 +11,24 @@ from clients import http as http_client
 
 log = logging.getLogger("aditi")
 
+# Human-readable state labels sent to n8n.
+# Internal call_phase values are kept as-is everywhere else (transcripts, logs).
+_STATE_LABEL: dict[str, str] = {
+    "ptp":             "PTP",
+    "payment_confirm": "Agrees to Pay",
+    "partial":         "Partial Payment",
+    "cannot_pay":      "Cannot Pay Reason",
+    "already_paid":    "Already Paid",
+    "callback":        "User Busy / Callback Schedule",
+    "deceased":        "Deceased Report",
+}
+
+
+def humanize_state(state: str) -> str:
+    """Return the human-readable label for a call_phase value."""
+    return _STATE_LABEL.get(state.lower().strip(), state)
+
+
 # Canonical output fields pushed to n8n after every call.
 # classifier.finalize_call_variables() must use these exact key names.
 CALL_SUMMARY_OUTPUT_KEYS: tuple[str, ...] = (
@@ -48,8 +66,8 @@ def build_call_summary_push_body(
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         ),
-        # state — prefer explicit arg, fall back to what classifier may have set
-        "state": state or cv.pop("state", ""),
+        # state — human-readable label for n8n
+        "state": humanize_state(state or cv.pop("state", "")),
         # doing_payment is deterministic from hangup_reason — no LLM needed
         "doing_payment": hangup_reason == "payment_today_confirmed",
     }
