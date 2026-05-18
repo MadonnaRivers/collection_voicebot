@@ -62,10 +62,10 @@ TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
 RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "recordings")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
-# Post-call JSON (all CRM fields) — pushed to n8n /webhook/post_data
+# Post-call JSON (all CRM fields) — pushed to n8n /webhook/push_data
 CALL_SUMMARY_WEBHOOK_URL = os.getenv(
     "CALL_SUMMARY_WEBHOOK_URL",
-    "https://web-n8n.easyhomefinance.in/webhook/post_data",
+    "https://web-n8n.easyhomefinance.in/webhook/push_data",
 ).strip()
 
 # Plivo will POST recording metadata here when recording is ready (leave blank to disable)
@@ -74,7 +74,7 @@ RECORDING_CALLBACK_URL = os.getenv("RECORDING_CALLBACK_URL", "").strip()
 # Webhook to receive combined audio + transcript after call ends
 AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
     "AUDIO_TRANSCRIPT_WEBHOOK_URL",
-    "https://web-n8n.easyhomefinance.in/webhook/post_audio_and_transcripts",
+    "https://web-n8n.easyhomefinance.in/webhook/audio_and_transcripts",
 ).strip()
 
 # ── Call behaviour tunables ───────────────────────────────────────────────────
