@@ -223,6 +223,15 @@ async def recording_callback(request: Request) -> JSONResponse:
     )
     log.info("Recording callback parsed data: %s", data)
 
+    # Plivo sometimes wraps the entire payload as a JSON string in a 'response' field
+    if "response" in data and isinstance(data["response"], str):
+        import json as _j
+        try:
+            data = {**data, **_j.loads(data["response"])}
+            log.info("Recording callback unwrapped 'response' field: %s", data)
+        except Exception:
+            pass
+
     # Plivo field names vary — handle both casings
     call_uuid    = data.get("CallUUID")    or data.get("call_uuid",     "")
     recording_id = data.get("RecordingID") or data.get("recording_id",  "")
