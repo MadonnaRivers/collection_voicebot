@@ -73,7 +73,13 @@ def build_opening_greeting(ctx: dict[str, str]) -> str:
             f"आपकी होम लोन की EMI {amount} रुपये {due} को बकाया है। "
             "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
         )
-    # Minimal fallback if context is sparse
+    if amount:
+        return (
+            f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
+            f"आपकी होम लोन की EMI {amount} रुपये अभी बकाया है। "
+            "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+        )
+    # Minimal fallback if both amount and date are missing
     return (
         f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
         "आपकी EMI अभी बकाया है। कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
