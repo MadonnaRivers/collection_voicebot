@@ -91,10 +91,7 @@ def _save_call_audio(sess: "CallSession") -> dict[str, str]:
     }
 
 
-async def _upload_audio_to_n8n(
-    sess: "CallSession",
-    summary_body: dict | None = None,
-) -> bool:
+async def _upload_audio_to_n8n(sess: "CallSession") -> bool:
     if not AUDIO_TRANSCRIPT_WEBHOOK_URL:
         return False
     payload = _save_call_audio(sess)
@@ -105,18 +102,12 @@ async def _upload_audio_to_n8n(
     files = {
         "file": (file_name, payload["combined_wav_bytes"], "audio/wav"),
     }
-    # Base fields
-    data: dict = {
+    data = {
         "call_sid": sess.call_sid,
         "loan_id":  payload.get("loan_id", ""),
         "id":       payload["id"],
         "ts":       ts_str,
     }
-    # Merge all call-summary output params (skip binary/None values)
-    if summary_body:
-        for k, v in summary_body.items():
-            if k not in data and v not in (None, "", False):
-                data[k] = str(v) if not isinstance(v, str) else v
     r = await _http_client.post(AUDIO_TRANSCRIPT_WEBHOOK_URL, data=data, files=files, timeout=90.0)
     log.info("audio_and_transcripts webhook upload → HTTP %d call=%s", r.status_code, sess.call_sid)
     return True
@@ -353,8 +344,7 @@ async def media_stream(ws: WebSocket) -> None:
                     record("call_summary", **call_vars)
             except Exception as exc:
                 log.warning("call vars error: %s", exc)
-            wh_body: dict = {}
-            if sess.call_sid:
+            if CALL_SUMMARY_WEBHOOK_URL and sess.call_sid:
                 wh_body = build_call_summary_push_body(
                     sess.call_sid,
                     reason,
@@ -362,10 +352,9 @@ async def media_stream(ws: WebSocket) -> None:
                     ctx=sess.ctx,
                     state=sess.state,
                 )
-                if CALL_SUMMARY_WEBHOOK_URL:
-                    await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
+                await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
             try:
-                uploaded = await _upload_audio_to_n8n(sess, summary_body=wh_body)
+                uploaded = await _upload_audio_to_n8n(sess)
                 if uploaded:
                     record("recording_uploaded", webhook=AUDIO_TRANSCRIPT_WEBHOOK_URL)
             except Exception as exc:

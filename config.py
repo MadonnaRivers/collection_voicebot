@@ -62,8 +62,11 @@ TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
 RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "recordings")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
-# Post-call JSON (all CRM fields) — e.g. n8n webhook
-CALL_SUMMARY_WEBHOOK_URL = os.getenv("CALL_SUMMARY_WEBHOOK_URL", "").strip()
+# Post-call JSON (all CRM fields) — pushed to n8n /webhook/push_data
+CALL_SUMMARY_WEBHOOK_URL = os.getenv(
+    "CALL_SUMMARY_WEBHOOK_URL",
+    "https://uat-n8n.easyhomefinance.in/webhook/push_data",
+).strip()
 
 # Plivo will POST recording metadata here when recording is ready (leave blank to disable)
 RECORDING_CALLBACK_URL = os.getenv("RECORDING_CALLBACK_URL", "").strip()
