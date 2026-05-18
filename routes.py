@@ -19,8 +19,12 @@ _WS_HOST = _urlparse(NGROK_URL).netloc   # e.g. "a4d3-xxxx.ngrok-free.app"
 from scripts import build_default_ctx
 from session import pending_ctx
 from call_handler import media_stream
+import log_buffer as _log_buffer
 
 log = logging.getLogger("aditi")
+
+# Attach in-memory log buffer before anything else logs
+_log_buffer.attach()
 
 
 @asynccontextmanager
@@ -551,6 +555,174 @@ async def transcript_detail(filename: str) -> HTMLResponse:
   </div>
   {recording_html}
   {summary_html}
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Live log viewer
+# ─────────────────────────────────────────────────────────────────────────────
+@app.get("/logs", response_class=HTMLResponse)
+async def logs_page() -> HTMLResponse:
+    """
+    Live in-memory log viewer. Shows last 600 log lines + server state.
+    Hit /logs in your browser to diagnose issues without server SSH access.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    from datetime import datetime, timezone
+    from session import pending_ctx, recording_pending
+    from config import CALL_SUMMARY_WEBHOOK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL
+
+    lines = _log_buffer.get_lines()
+
+    # ── colour map ────────────────────────────────────────────────────────────
+    _colours = {
+        "DEBUG":    "#475569",
+        "INFO":     "#94a3b8",
+        "WARNING":  "#fbbf24",
+        "ERROR":    "#f87171",
+        "CRITICAL": "#ef4444",
+    }
+
+    # Keywords that get highlighted regardless of level
+    _hl = {
+        "webhook OK":           "#4ade80",
+        "webhook failed":       "#f87171",
+        "webhook":              "#818cf8",
+        "CALL_VARS":            "#4ade80",
+        "call vars error":      "#f87171",
+        "Hangup":               "#fbbf24",
+        "carrier_disconnect":   "#fbbf24",
+        "unexpected_disconnect":"#f87171",
+        "ptp_confirmed":        "#4ade80",
+        "cannot_pay":           "#fb923c",
+        "STT":                  "#67e8f9",
+        "TTS":                  "#a78bfa",
+        "Plivo":                "#60a5fa",
+        "rekeyed":              "#4ade80",
+        "pending_ctx":          "#fbbf24",
+        "audio_and_transcripts":"#818cf8",
+        "post_data":            "#818cf8",
+        "Outbound call":        "#4ade80",
+    }
+
+    def _row(entry: dict) -> str:
+        msg  = entry["msg"]
+        lvl  = entry["level"]
+        col  = _colours.get(lvl, "#94a3b8")
+        # highlight keywords
+        for kw, kc in _hl.items():
+            if kw.lower() in msg.lower():
+                col = kc
+                break
+        safe = (msg.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        return f'<div style="color:{col};padding:2px 0;border-bottom:1px solid #1e293b;font-size:12px;font-family:monospace;white-space:pre-wrap;word-break:break-all">{safe}</div>'
+
+    log_html = "".join(_row(e) for e in reversed(lines)) if lines else \
+        '<div style="color:#475569;padding:20px;text-align:center">No logs captured yet — make a call first.</div>'
+
+    # ── recent transcripts ────────────────────────────────────────────────────
+    recent_files = sorted(
+        _Path(TRANSCRIPTS_DIR).glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime, reverse=True,
+    )[:8] if _Path(TRANSCRIPTS_DIR).exists() else []
+
+    tx_rows = ""
+    for f in recent_files:
+        call_sid = state = hangup_reason = ""
+        try:
+            for ln in f.read_text(encoding="utf-8").strip().splitlines():
+                row = _json.loads(ln)
+                if not call_sid:
+                    call_sid = row.get("sid", "")
+                if row.get("event") == "hangup":
+                    hangup_reason = row.get("reason", "")
+                    state = row.get("state", "")
+        except Exception:
+            pass
+        outcome = state or hangup_reason or "—"
+        tx_rows += f"<tr><td style='color:#94a3b8;font-size:11px'>{f.name[:38]}</td><td style='color:#64748b;font-size:11px;font-family:monospace'>{call_sid[:20]}</td><td><span style='background:#312e81;color:#a5b4fc;padding:2px 8px;border-radius:20px;font-size:10px'>{outcome}</span></td></tr>"
+
+    tx_table = f"""
+    <table style="width:100%;border-collapse:collapse;background:#111827;border-radius:8px;overflow:hidden;margin-top:8px">
+      <thead><tr>
+        <th style="background:#1e293b;padding:8px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">File</th>
+        <th style="background:#1e293b;padding:8px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Call SID</th>
+        <th style="background:#1e293b;padding:8px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Outcome</th>
+      </tr></thead>
+      <tbody>{tx_rows or '<tr><td colspan="3" style="text-align:center;padding:20px;color:#334155">No transcripts yet</td></tr>'}</tbody>
+    </table>""" if recent_files else '<p style="color:#334155;font-size:13px">No transcript files found.</p>'
+
+    # ── server state ──────────────────────────────────────────────────────────
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    state_rows = [
+        ("Time (UTC)", now),
+        ("pending_ctx keys", str(len(pending_ctx)) + (" — " + ", ".join(list(pending_ctx.keys())[:5]) if pending_ctx else " (empty ✅)")),
+        ("recording_pending keys", str(len(recording_pending))),
+        ("Transcript files", str(len(list(_Path(TRANSCRIPTS_DIR).glob("*.jsonl")))) if _Path(TRANSCRIPTS_DIR).exists() else "0"),
+        ("push_data webhook", CALL_SUMMARY_WEBHOOK_URL or "(not set ⚠️)"),
+        ("audio webhook", AUDIO_TRANSCRIPT_WEBHOOK_URL or "(not set ⚠️)"),
+        ("Log lines captured", str(len(lines))),
+    ]
+    state_html = "".join(
+        f"<tr><td style='color:#64748b;font-size:12px;padding:6px 10px;border-bottom:1px solid #1e293b;width:35%'>{k}</td>"
+        f"<td style='font-size:12px;padding:6px 10px;border-bottom:1px solid #1e293b;word-break:break-all'>{v}</td></tr>"
+        for k, v in state_rows
+    )
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="15">
+  <title>Aditi — Live Logs</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0a0f1e;color:#e2e8f0;padding:20px}}
+    h2{{font-size:14px;font-weight:600;color:#94a3b8;margin:20px 0 8px;text-transform:uppercase;letter-spacing:.06em}}
+    .card{{background:#111827;border-radius:10px;padding:14px 16px}}
+    .header{{display:flex;align-items:center;gap:12px;margin-bottom:20px}}
+    .header h1{{font-size:18px;font-weight:700;color:#f1f5f9}}
+    .badge{{background:#1e293b;color:#64748b;font-size:11px;padding:2px 10px;border-radius:20px}}
+    .refresh{{margin-left:auto;font-size:12px;color:#818cf8;text-decoration:none;border:1px solid #312e81;padding:4px 12px;border-radius:6px}}
+    .log-box{{background:#0a0f1e;border:1px solid #1e293b;border-radius:8px;padding:12px;max-height:520px;overflow-y:auto}}
+    a{{color:#818cf8;text-decoration:none}}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔍 Aditi — Live Logs</h1>
+    <span class="badge">auto-refresh 15s</span>
+    <a class="refresh" href="/logs">⟳ Refresh now</a>
+  </div>
+
+  <h2>Server State</h2>
+  <div class="card">
+    <table style="width:100%;border-collapse:collapse">
+      <tbody>{state_html}</tbody>
+    </table>
+  </div>
+
+  <h2>Recent Transcripts (last 8)</h2>
+  <div class="card">{tx_table}</div>
+
+  <h2>Log Output (newest first · last {len(lines)} lines)</h2>
+  <div class="card">
+    <div class="log-box">{log_html}</div>
+  </div>
+
+  <p style="margin-top:14px;font-size:11px;color:#334155">
+    Colour key:
+    <span style="color:#4ade80">■ success/webhook OK</span> &nbsp;
+    <span style="color:#f87171">■ error</span> &nbsp;
+    <span style="color:#fbbf24">■ warning/hangup</span> &nbsp;
+    <span style="color:#818cf8">■ webhook call</span> &nbsp;
+    <span style="color:#67e8f9">■ STT</span> &nbsp;
+    <span style="color:#a78bfa">■ TTS</span>
+  </p>
 </body>
 </html>"""
     return HTMLResponse(html)
