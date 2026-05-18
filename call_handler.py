@@ -443,6 +443,10 @@ async def media_stream(ws: WebSocket) -> None:
                     await stt_ws.close()
                 except Exception:
                     pass
+                # Carrier disconnected unexpectedly — fire hangup immediately so
+                # webhooks and audio upload are not delayed by the 20s silence timeout.
+                if not sess._hangup_started and not sess.done and sess.call_sid:
+                    asyncio.create_task(hangup("carrier_disconnect"))
 
         # ── Sarvam STT receiver ──────────────────────────────────────────────
         def _barge_in_allowed() -> bool:
@@ -759,6 +763,13 @@ async def media_stream(ws: WebSocket) -> None:
         await asyncio.gather(recv_ws(), recv_sarvam_stt(), llm_conversation_loop())
 
     finally:
+        # Safety-net: if gather exited without hangup being triggered (crash, exception,
+        # abrupt disconnect before recv_ws had a call_sid), ensure webhooks still fire.
+        try:
+            if not sess._hangup_started and not sess.done:
+                await hangup("unexpected_disconnect")
+        except Exception as exc:
+            log.warning("cleanup hangup error: %s", exc)
         _denoise_pool.shutdown(wait=False)
         try:
             await stt_ws.close()
