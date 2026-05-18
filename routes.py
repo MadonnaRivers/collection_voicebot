@@ -142,18 +142,24 @@ async def make_call(
 
 @app.api_route("/outgoing-call", methods=["GET", "POST"])
 async def outgoing_call(request: Request) -> HTMLResponse:
-    # Plivo sends CallUUID in the POST body when the call is answered.
-    # make_call() stored pending_ctx under request_uuid (different from CallUUID),
-    # so we rekey it here so call_handler.py can find the context via sess.call_sid.
+    # Plivo sends both RequestUUID and CallUUID in the POST body when the call is answered.
+    # make_call() stored pending_ctx under request_uuid, so we rekey it to CallUUID
+    # so call_handler.py can find the context via sess.call_sid.
+    # IMPORTANT: use RequestUUID for direct lookup — never iterate all keys (race condition
+    # with concurrent calls causes wrong contexts to be assigned to wrong calls).
     try:
         form = await request.form()
-        call_uuid = form.get("CallUUID", "")
-        if call_uuid and pending_ctx:
-            for rid in list(pending_ctx.keys()):
-                if rid != call_uuid:
-                    pending_ctx[call_uuid] = pending_ctx.pop(rid)
-                    log.info("pending_ctx rekeyed: %s → %s", rid, call_uuid)
-                    break
+        call_uuid    = form.get("CallUUID",    "")
+        request_uuid = form.get("RequestUUID", "")
+        if call_uuid and request_uuid and request_uuid in pending_ctx:
+            pending_ctx[call_uuid] = pending_ctx.pop(request_uuid)
+            log.info("pending_ctx rekeyed: %s → %s", request_uuid, call_uuid)
+        elif call_uuid and not request_uuid:
+            # Fallback: RequestUUID missing (shouldn't happen) — safe single-key check
+            if call_uuid not in pending_ctx and len(pending_ctx) == 1:
+                rid = next(iter(pending_ctx))
+                pending_ctx[call_uuid] = pending_ctx.pop(rid)
+                log.info("pending_ctx fallback rekey: %s → %s", rid, call_uuid)
     except Exception as exc:
         log.debug("outgoing-call rekey skipped: %s", exc)
 
