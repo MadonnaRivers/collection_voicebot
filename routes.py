@@ -140,6 +140,12 @@ async def make_call(
 
     call_sid = await carrier.make_call(to, f"{NGROK_URL}/outgoing-call")
     pending_ctx[call_sid] = ctx
+    # Evict oldest entries if pending_ctx grows too large (e.g. unanswered calls
+    # that never hit /outgoing-call and never get consumed by call_handler).
+    if len(pending_ctx) > 200:
+        oldest = next(iter(pending_ctx))
+        pending_ctx.pop(oldest, None)
+        log.warning("pending_ctx overflow — evicted oldest key %s", oldest)
     log.info("Outbound call initiated — SID=%s to=%s", call_sid, to)
     return JSONResponse({"call_sid": call_sid})
 

@@ -33,6 +33,7 @@ from config import (
     HANGUP_GRACE_SEC, SILENCE_TIMEOUT_SEC, BARGE_IN_GUARD_SEC,
     POST_UTTERANCE_PAUSE_SEC, TRANSCRIPTS_DIR,
     CALL_SUMMARY_WEBHOOK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL,
+    RECORDING_CALLBACK_URL, NGROK_URL,
 )
 from clients import http as _http_client
 from classifier import finalize_call_variables
@@ -388,6 +389,11 @@ async def media_stream(ws: WebSocket) -> None:
                             sess.ctx = pending_ctx.pop(sess.call_sid)
                         log.info("Stream=%s Call=%s", sess.stream_sid, sess.call_sid)
                         record("call_start")
+                        # Start Plivo server-side recording — URL delivered via /recording-callback
+                        if sess.call_sid and RECORDING_CALLBACK_URL:
+                            asyncio.create_task(
+                                _carrier.start_recording(sess.call_sid, RECORDING_CALLBACK_URL)
+                            )
 
                     elif evt_type == "audio_frame":
                         if sess.done:
