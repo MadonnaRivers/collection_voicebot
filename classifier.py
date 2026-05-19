@@ -73,7 +73,7 @@ async def finalize_call_variables(
             "    cannot_pay → callback/follow-up date (context: callback_iso)\n"
             "    deceased → team follow-up date (context: callback_iso or target_date)\n"
             "    Use context target_date or callback_iso if set.\n"
-            "- partial_amount: rupees string (e.g. \"3000\") — partial committed today\n"
+            "- partial_amount: rupees string (e.g. \"3000\") — ONLY for partial payment flow. OMIT for payment_confirm/ptp/cannot_pay/already_paid/callback.\n"
             "- cannot_pay_reason: 5-15 word English — why they cannot pay\n"
             "- already_paid_date: YYYY-MM-DD — date they claim to have already paid\n"
             "- already_paid_mode: UPI / NEFT / cash / branch / etc.\n"
