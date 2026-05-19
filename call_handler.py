@@ -663,18 +663,34 @@ async def media_stream(ws: WebSocket) -> None:
                 if await _apply_turn(turn, None):
                     return
 
+            _silence_count = 0
             while not sess.done:
                 try:
                     utterance = await asyncio.wait_for(utt_q.get(), timeout=SILENCE_TIMEOUT_SEC)
+                    _silence_count = 0   # reset on real speech
                 except asyncio.TimeoutError:
                     if sess.done:
                         break
-                    log.info("LLM: %.0f s silence", SILENCE_TIMEOUT_SEC)
-                    if await _stream_apply_turn(
-                        "[घटना: मौन — ग्राहक ने उत्तर नहीं दिया। संक्षेप में फिर से पूछें या वसूली नीति के अनुसार "
-                        "विनम्र समापन। बोलने योग्य पूरा उत्तर केवल हिंदी देवनागरी में दें।]",
-                        "[मौन — कोई उत्तर नहीं]",
-                    ):
+                    _silence_count += 1
+                    log.info("LLM: %.0f s silence (count=%d)", SILENCE_TIMEOUT_SEC, _silence_count)
+
+                    if _silence_count == 1:
+                        # First silence — ask once more
+                        if await _stream_apply_turn(
+                            "[SILENCE_1: No response. Ask once more, very briefly.]",
+                            "[मौन — कोई उत्तर नहीं]",
+                        ):
+                            break
+                    else:
+                        # Second silence — closing statement then force-end
+                        log.info("LLM: second silence — ending call")
+                        await _stream_apply_turn(
+                            "[SILENCE_2: No response again. Say the no-response goodbye "
+                            "and set end_call=true, hangup_reason=no_response.]",
+                            "[मौन — कोई उत्तर नहीं]",
+                        )
+                        if not sess.done:
+                            await hangup("silence_timeout")
                         break
                     continue
 
