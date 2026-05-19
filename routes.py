@@ -291,6 +291,27 @@ async def recording_callback(request: Request) -> JSONResponse:
     except OSError as exc:
         log.warning("Could not write recording metadata: %s", exc)
 
+    # ── 3. Push recording fields to push_data webhook ─────────────────────────
+    from config import CALL_SUMMARY_WEBHOOK_URL
+    from call_webhook import push_call_summary_webhook
+    if CALL_SUMMARY_WEBHOOK_URL and call_uuid:
+        rec_start_ms  = data.get("recording_start_ms", "")
+        rec_end_ms    = data.get("recording_end_ms",   "")
+        rec_dur_ms    = data.get("recording_duration_ms", "")
+        wh_rec = {
+            "call_sid":            call_uuid,
+            "recording_url":       record_url,
+            "recording_id":        recording_id,
+            "duration_sec":        duration,
+            "recording_start_ms":  rec_start_ms,
+            "recording_end_ms":    rec_end_ms,
+            "recording_duration_ms": rec_dur_ms,
+            "ts":                  ts_str,
+            "event":               "recording_ready",
+        }
+        await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_rec)
+        log.info("Recording fields pushed to push_data webhook — call=%s", call_uuid)
+
     return JSONResponse({"status": "ok"})
 
 
@@ -347,12 +368,107 @@ async def _push_audio_transcript(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Transcript viewer — list + detail pages
+# Transcript viewer — list + detail pages  (beautiful dark UI)
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Outcome → (label, bg-color, text-color)
+_OUTCOME_STYLE: dict[str, tuple[str, str, str]] = {
+    "ptp_confirmed":          ("✅ PTP",            "#14532d", "#4ade80"),
+    "ptp":                    ("✅ PTP",            "#14532d", "#4ade80"),
+    "payment_today_confirmed":("💳 Paid Today",    "#064e3b", "#34d399"),
+    "payment_confirm":        ("💳 Paid Today",    "#064e3b", "#34d399"),
+    "partial_confirmed":      ("🔵 Partial",       "#1e3a5f", "#60a5fa"),
+    "partial":                ("🔵 Partial",       "#1e3a5f", "#60a5fa"),
+    "cannot_pay_callback":    ("🔴 Cannot Pay",    "#431407", "#fb923c"),
+    "cannot_pay":             ("🔴 Cannot Pay",    "#431407", "#fb923c"),
+    "callback_scheduled":     ("🔔 Callback",      "#312e81", "#a5b4fc"),
+    "callback":               ("🔔 Callback",      "#312e81", "#a5b4fc"),
+    "already_paid_noted":     ("🟡 Already Paid",  "#451a03", "#fbbf24"),
+    "already_paid":           ("🟡 Already Paid",  "#451a03", "#fbbf24"),
+    "deceased":               ("⚫ Deceased",       "#1e293b", "#94a3b8"),
+    "no_response":            ("😶 No Response",   "#1c1917", "#78716c"),
+    "silence_timeout":        ("😶 No Response",   "#1c1917", "#78716c"),
+    "orchestrator_failure":   ("⚠️ Error",          "#450a0a", "#f87171"),
+    "carrier_disconnect":     ("📵 Disconnected",  "#1e293b", "#94a3b8"),
+}
+
+def _outcome_badge(raw: str, size: str = "sm") -> str:
+    """Return a styled HTML badge for an outcome/hangup_reason string."""
+    key = (raw or "").lower().replace(" ", "_")
+    label, bg, fg = _OUTCOME_STYLE.get(key, ("❓ " + (raw or "Unknown"), "#1e293b", "#64748b"))
+    pad = "3px 10px" if size == "lg" else "2px 9px"
+    fs  = "13px"     if size == "lg" else "11px"
+    return (
+        f'<span style="background:{bg};color:{fg};padding:{pad};border-radius:20px;'
+        f'font-size:{fs};font-weight:600;white-space:nowrap">{label}</span>'
+    )
+
+def _fmt_ts_from_filename(stem: str) -> str:
+    """Parse YYYYMMDD_HHMMSS from transcript filename stem."""
+    import re as _re
+    m = _re.match(r"(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})", stem)
+    if m:
+        y, mo, d, h, mi, s = m.groups()
+        months = ["Jan","Feb","Mar","Apr","May","Jun",
+                  "Jul","Aug","Sep","Oct","Nov","Dec"]
+        try:
+            mn = months[int(mo) - 1]
+        except Exception:
+            mn = mo
+        return f"{d} {mn} {y}  {h}:{mi}:{s}"
+    return stem[:19]
+
+def _parse_transcript(path: "Path") -> dict:  # type: ignore[name-defined]
+    """Read a JSONL transcript and return a summary dict for list/detail views."""
+    import json as _json
+    out = {
+        "call_sid": "", "phone": "", "customer": "", "loan_id": "", "emi": "",
+        "emi_date": "", "hangup_reason": "", "state": "", "summary": "",
+        "recording_url": "", "duration": "", "events": [],
+    }
+    try:
+        for ln in path.read_text(encoding="utf-8").strip().splitlines():
+            try:
+                row = _json.loads(ln)
+            except Exception:
+                continue
+            out["events"].append(row)
+            evt = row.get("event", "")
+            if evt == "call_start":
+                out["call_sid"]  = row.get("sid", "") or out["call_sid"]
+                out["phone"]     = row.get("phone", "")    or out["phone"]
+                out["customer"]  = row.get("customer", "") or out["customer"]
+                out["loan_id"]   = row.get("loan_id", "")  or out["loan_id"]
+                out["emi"]       = row.get("emi", "")      or out["emi"]
+                out["emi_date"]  = row.get("emi_date", "") or out["emi_date"]
+            elif evt == "hangup":
+                out["hangup_reason"] = row.get("reason", "") or out["hangup_reason"]
+                out["state"]         = row.get("state", "")  or out["state"]
+            elif evt == "call_summary":
+                out["summary"] = row.get("summary", "") or out["summary"]
+            elif evt == "recording_ready":
+                out["recording_url"] = row.get("recording_url", "") or out["recording_url"]
+                out["duration"]      = str(row.get("duration_sec", "")) or out["duration"]
+            # Fallback for call_sid from any event
+            if not out["call_sid"]:
+                out["call_sid"] = row.get("sid", "")
+    except OSError:
+        pass
+    return out
+
+_TRANSCRIPT_CSS = """\
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#080d1a;color:#e2e8f0;min-height:100vh}
+a{color:#818cf8;text-decoration:none}
+a:hover{text-decoration:underline}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#0f172a}
+::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
+"""
+
 @app.get("/transcripts", response_class=HTMLResponse)
 async def transcripts_list() -> HTMLResponse:
-    """List all call transcripts, newest first."""
-    import json as _json
+    """Beautiful list of all call transcripts, newest first."""
     from pathlib import Path as _Path
 
     files = sorted(
@@ -361,39 +477,66 @@ async def transcripts_list() -> HTMLResponse:
         reverse=True,
     ) if _Path(TRANSCRIPTS_DIR).exists() else []
 
-    rows_html = ""
+    cards_html = ""
     for f in files:
-        call_sid = hangup_reason = recording_url = state = ""
-        try:
-            lines = f.read_text(encoding="utf-8").strip().splitlines()
-            for ln in lines:
-                try:
-                    row = _json.loads(ln)
-                    if not call_sid:
-                        call_sid = row.get("sid", "")
-                    if row.get("event") == "hangup":
-                        hangup_reason = row.get("reason", "")
-                        state         = row.get("state", "")
-                    if row.get("event") == "recording_ready":
-                        recording_url = row.get("recording_url", "")
-                except Exception:
-                    pass
-        except OSError:
-            pass
+        meta = _parse_transcript(f)
+        dt_str   = _fmt_ts_from_filename(f.stem)
+        outcome  = meta["state"] or meta["hangup_reason"]
+        badge    = _outcome_badge(outcome)
+        customer = meta["customer"] or "—"
+        phone    = meta["phone"]    or "—"
+        loan_id  = meta["loan_id"]  or "—"
+        emi      = f"₹{meta['emi']}" if meta["emi"] else "—"
+        duration = f"{meta['duration']}s" if meta["duration"] else ""
+        summary  = meta["summary"][:110] + "…" if len(meta.get("summary","")) > 110 else meta.get("summary","")
 
-        rec_badge = (
-            f'<a href="{recording_url}" target="_blank" '
-            f'style="color:#22c55e;font-size:11px;">▶ recording</a>'
-            if recording_url else
-            '<span style="color:#6b7280;font-size:11px;">no recording</span>'
+        rec_dot  = (
+            '<span title="Recording available" style="display:inline-block;width:8px;height:8px;'
+            'border-radius:50%;background:#22c55e;margin-right:5px"></span>'
+            if meta["recording_url"] else ""
         )
-        rows_html += f"""
-        <tr onclick="location.href='/transcripts/{f.name}'" style="cursor:pointer">
-          <td>{f.stem[:40]}</td>
-          <td style="color:#94a3b8;font-size:12px">{call_sid[:24]}</td>
-          <td><span class="badge">{state or hangup_reason or '—'}</span></td>
-          <td>{rec_badge}</td>
-        </tr>"""
+        dur_chip = (
+            f'<span style="font-size:11px;color:#64748b;margin-left:6px">{duration}</span>'
+            if duration else ""
+        )
+
+        cards_html += f"""
+        <div class="card" onclick="location.href='/transcripts/{f.name}'" role="button" tabindex="0"
+             onkeypress="if(event.key=='Enter')location.href='/transcripts/{f.name}'">
+          <div class="card-top">
+            <div class="dt">{dt_str}</div>
+            <div class="right-chips">{rec_dot}{dur_chip}{badge}</div>
+          </div>
+          <div class="card-body">
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="lbl">Customer</span>
+                <span class="val">{customer}</span>
+              </div>
+              <div class="info-item">
+                <span class="lbl">Phone</span>
+                <span class="val mono">{phone}</span>
+              </div>
+              <div class="info-item">
+                <span class="lbl">Loan ID</span>
+                <span class="val mono">{loan_id}</span>
+              </div>
+              <div class="info-item">
+                <span class="lbl">EMI Due</span>
+                <span class="val">{emi}</span>
+              </div>
+            </div>
+            {f'<div class="summary-line">{summary}</div>' if summary else ""}
+          </div>
+        </div>"""
+
+    empty = (
+        '<div class="empty-state">'
+        '<div style="font-size:48px;margin-bottom:16px">📂</div>'
+        '<div style="font-size:18px;font-weight:600;color:#475569">No calls yet</div>'
+        '<div style="font-size:14px;color:#334155;margin-top:6px">Transcripts will appear here after calls complete.</div>'
+        '</div>'
+    ) if not files else ""
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -402,32 +545,61 @@ async def transcripts_list() -> HTMLResponse:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Aditi — Call Transcripts</title>
   <style>
-    *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;padding:24px}}
-    h1{{font-size:22px;font-weight:700;margin-bottom:20px;color:#f8fafc}}
-    h1 span{{color:#818cf8;font-size:14px;font-weight:400;margin-left:10px}}
-    table{{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden}}
-    th{{background:#334155;padding:10px 14px;text-align:left;font-size:12px;
-        color:#94a3b8;text-transform:uppercase;letter-spacing:.05em}}
-    td{{padding:10px 14px;font-size:13px;border-bottom:1px solid #334155}}
-    tr:last-child td{{border-bottom:none}}
-    tr:hover td{{background:#273347}}
-    .badge{{background:#312e81;color:#a5b4fc;padding:2px 8px;border-radius:20px;font-size:11px}}
-    a{{color:#818cf8;text-decoration:none}}
-    a:hover{{text-decoration:underline}}
-    .empty{{text-align:center;padding:40px;color:#475569}}
+    {_TRANSCRIPT_CSS}
+    .page-wrap{{max-width:900px;margin:0 auto;padding:28px 20px}}
+    .page-header{{display:flex;align-items:center;justify-content:space-between;
+                  margin-bottom:28px;flex-wrap:wrap;gap:12px}}
+    .page-title{{font-size:22px;font-weight:700;color:#f1f5f9;display:flex;align-items:center;gap:10px}}
+    .page-title svg{{opacity:.7}}
+    .count-chip{{background:#1e293b;color:#64748b;font-size:12px;padding:3px 12px;
+                 border-radius:20px;font-weight:400}}
+    .nav-links{{display:flex;gap:10px}}
+    .nav-link{{background:#1e293b;color:#818cf8;font-size:12px;padding:6px 14px;
+               border-radius:8px;border:1px solid #334155}}
+    .nav-link:hover{{background:#273347;text-decoration:none}}
+    .grid{{display:grid;gap:12px}}
+    .card{{background:#111827;border:1px solid #1e293b;border-radius:14px;
+           padding:16px 20px;cursor:pointer;transition:border-color .15s,background .15s;
+           outline:none}}
+    .card:hover,.card:focus{{border-color:#334155;background:#141c2e}}
+    .card-top{{display:flex;align-items:center;justify-content:space-between;
+               margin-bottom:12px;flex-wrap:wrap;gap:8px}}
+    .dt{{font-size:13px;color:#94a3b8;font-weight:500;font-family:monospace}}
+    .right-chips{{display:flex;align-items:center;gap:6px;flex-wrap:wrap}}
+    .card-body{{display:flex;flex-direction:column;gap:10px}}
+    .info-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}}
+    .info-item{{display:flex;flex-direction:column;gap:2px}}
+    .lbl{{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#475569;font-weight:600}}
+    .val{{font-size:13px;color:#cbd5e1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+    .mono{{font-family:monospace;font-size:12px}}
+    .summary-line{{font-size:12px;color:#64748b;padding-top:4px;border-top:1px solid #1e293b;
+                   line-height:1.5;font-style:italic}}
+    .empty-state{{text-align:center;padding:80px 20px;color:#475569}}
   </style>
 </head>
 <body>
-  <h1>Call Transcripts <span>{len(files)} calls</span></h1>
-  <table>
-    <thead><tr>
-      <th>File</th><th>Call SID</th><th>Outcome</th><th>Recording</th>
-    </tr></thead>
-    <tbody>
-      {'<tr><td colspan="4" class="empty">No transcripts yet.</td></tr>' if not files else rows_html}
-    </tbody>
-  </table>
+  <div class="page-wrap">
+    <div class="page-header">
+      <div class="page-title">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" stroke-width="2">
+          <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.8
+                   19.79 19.79 0 01.22 1.18 2 2 0 012.18 0h3a2 2 0 012 1.72c.13 1 .39 1.97.74 2.9
+                   a2 2 0 01-.45 2.11L6.1 7.91a16 16 0 006 6l1.18-1.18a2 2 0 012.11-.45
+                   c.93.35 1.9.61 2.9.74A2 2 0 0122 14.92z"/>
+        </svg>
+        Call Transcripts
+        <span class="count-chip">{len(files)} call{'s' if len(files) != 1 else ''}</span>
+      </div>
+      <div class="nav-links">
+        <a class="nav-link" href="/logs">📋 Logs</a>
+        <a class="nav-link" href="/health">❤️ Health</a>
+      </div>
+    </div>
+    <div class="grid">
+      {cards_html}
+      {empty}
+    </div>
+  </div>
 </body>
 </html>"""
     return HTMLResponse(html)
@@ -435,8 +607,7 @@ async def transcripts_list() -> HTMLResponse:
 
 @app.get("/transcripts/{filename}", response_class=HTMLResponse)
 async def transcript_detail(filename: str) -> HTMLResponse:
-    """Render a single transcript as a chat-bubble conversation."""
-    import json as _json
+    """Detailed call view with chat bubbles, metadata header, and audio player."""
     from pathlib import Path as _Path
 
     if not filename.endswith(".jsonl") or "/" in filename or "\\" in filename:
@@ -446,19 +617,15 @@ async def transcript_detail(filename: str) -> HTMLResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    events = []
-    try:
-        for line in path.read_text(encoding="utf-8").strip().splitlines():
-            try:
-                events.append(_json.loads(line))
-            except Exception:
-                pass
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    meta = _parse_transcript(path)
+    events   = meta["events"]
+    dt_str   = _fmt_ts_from_filename(path.stem)
+    outcome  = meta["state"] or meta["hangup_reason"]
+    badge_lg = _outcome_badge(outcome, size="lg")
 
-    call_sid = hangup_reason = state = recording_url = duration = ""
-    summary_fields: dict = {}
+    # ── Build chat bubbles ─────────────────────────────────────────────────────
     bubbles_html = ""
+    summary_fields: dict = {}
 
     for row in events:
         evt  = row.get("event", "")
@@ -466,60 +633,109 @@ async def transcript_detail(filename: str) -> HTMLResponse:
         ts   = row.get("ts", "")[:19].replace("T", " ")
 
         if evt == "call_start":
-            call_sid = row.get("sid", "")
-            bubbles_html += f'<div class="sys-evt">📞 Call started &nbsp;·&nbsp; {ts}</div>'
+            bubbles_html += (
+                f'<div class="sys-pill">📞 Call connected &nbsp;·&nbsp; '
+                f'<span class="mono">{ts}</span></div>'
+            )
 
         elif evt == "bot" and text:
+            safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             bubbles_html += f"""
-            <div class="row agent-row">
-              <div class="av agent-av">AI</div>
-              <div>
-                <div class="bubble agent-bubble">{text}</div>
-                <div class="ts">{ts}</div>
+            <div class="msg-row agent-row">
+              <div class="av av-agent" title="Aditi (AI)">AI</div>
+              <div class="msg-wrap">
+                <div class="bubble bubble-agent">{safe}</div>
+                <div class="msg-ts">{ts}</div>
               </div>
             </div>"""
 
         elif evt in ("user", "user_turn") and text:
+            safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             bubbles_html += f"""
-            <div class="row user-row">
-              <div>
-                <div class="bubble user-bubble">{text}</div>
-                <div class="ts" style="text-align:right">{ts}</div>
+            <div class="msg-row user-row">
+              <div class="msg-wrap">
+                <div class="bubble bubble-user">{safe}</div>
+                <div class="msg-ts" style="text-align:right">{ts}</div>
               </div>
-              <div class="av user-av">👤</div>
+              <div class="av av-user" title="Customer">👤</div>
             </div>"""
 
         elif evt == "hangup":
-            hangup_reason = row.get("reason", "")
-            state         = row.get("state", "")
-            bubbles_html += f'<div class="sys-evt">📵 Call ended &nbsp;·&nbsp; {hangup_reason} &nbsp;·&nbsp; {ts}</div>'
+            reason = row.get("reason", "")
+            bubbles_html += (
+                f'<div class="sys-pill">📵 Call ended &nbsp;·&nbsp; '
+                f'<span class="mono">{_outcome_badge(reason)}</span>'
+                f'&nbsp;·&nbsp; <span class="mono">{ts}</span></div>'
+            )
 
         elif evt == "call_summary":
             summary_fields = {k: v for k, v in row.items()
-                              if k not in ("ts", "event", "state", "sid")}
+                               if k not in ("ts", "event", "state", "sid") and v not in (None, "")}
 
-        elif evt == "recording_ready":
-            recording_url = row.get("recording_url", "")
-            duration      = str(row.get("duration_sec", ""))
+        elif evt in ("recording_uploaded", "recording_ready"):
+            pass   # handled separately via meta dict
 
-    sum_rows = "".join(
-        f"<tr><td>{k}</td><td>{v}</td></tr>"
-        for k, v in summary_fields.items() if v not in (None, "")
-    )
-    summary_html = f"""
-    <div class="card" style="margin-top:20px">
-      <div class="card-title">📋 Call Summary</div>
-      <table class="stbl"><tbody>{sum_rows}</tbody></table>
-    </div>""" if sum_rows else ""
+    # ── Summary card rows ──────────────────────────────────────────────────────
+    _FIELD_LABELS = {
+        "summary":           "Summary",
+        "target_date":       "Target Date",
+        "partial_amount":    "Partial Amount",
+        "cannot_pay_reason": "Cannot Pay Reason",
+        "already_paid_date": "Already Paid Date",
+        "already_paid_mode": "Payment Mode",
+        "callback_time":     "Callback Time",
+    }
+    sum_rows_html = ""
+    for k, v in summary_fields.items():
+        label = _FIELD_LABELS.get(k, k.replace("_", " ").title())
+        safe_v = str(v).replace("&","&amp;").replace("<","&lt;").replace(">","&gt;")
+        sum_rows_html += (
+            f"<tr><td class='sum-key'>{label}</td>"
+            f"<td class='sum-val'>{safe_v}</td></tr>"
+        )
 
-    recording_html = f"""
-    <div class="card" style="margin-top:14px">
-      <div class="card-title">🎙️ Call Recording &nbsp;<span style="font-weight:400;color:#64748b">{duration}s</span></div>
-      <audio controls style="width:100%;margin-top:6px;accent-color:#818cf8">
-        <source src="{recording_url}" type="audio/mpeg">
-        <a href="{recording_url}" target="_blank" style="color:#818cf8">Download MP3</a>
+    summary_card = f"""
+    <div class="detail-card" style="margin-top:16px">
+      <div class="detail-card-title">📋 Call Summary</div>
+      <table class="sum-tbl"><tbody>{sum_rows_html}</tbody></table>
+    </div>""" if sum_rows_html else ""
+
+    # ── Recording player ───────────────────────────────────────────────────────
+    recording_card = ""
+    if meta["recording_url"]:
+        dur_label = f"{meta['duration']}s" if meta["duration"] else ""
+        recording_card = f"""
+    <div class="detail-card" style="margin-top:16px">
+      <div class="detail-card-title">
+        🎙️ Call Recording
+        <span style="font-weight:400;color:#475569;font-size:12px;margin-left:6px">{dur_label}</span>
+      </div>
+      <audio controls style="width:100%;margin-top:10px;border-radius:8px;accent-color:#818cf8">
+        <source src="{meta['recording_url']}" type="audio/mpeg">
+        <a href="{meta['recording_url']}" target="_blank">Download recording</a>
       </audio>
-    </div>""" if recording_url else ""
+      <div style="margin-top:6px;font-size:11px;color:#334155">
+        <a href="{meta['recording_url']}" target="_blank" style="color:#475569">⬇ Download MP3</a>
+      </div>
+    </div>"""
+
+    # ── Metadata header fields ─────────────────────────────────────────────────
+    def _hf(label: str, value: str, mono: bool = False) -> str:
+        if not value or value == "—":
+            return ""
+        cls = "hf-mono" if mono else ""
+        return (
+            f'<div class="hf"><span class="hf-lbl">{label}</span>'
+            f'<span class="hf-val {cls}">{value}</span></div>'
+        )
+
+    header_fields = (
+        _hf("Customer",  meta["customer"] or "—")
+        + _hf("Phone",   meta["phone"]    or "—",  mono=True)
+        + _hf("Loan ID", meta["loan_id"]  or "—",  mono=True)
+        + _hf("EMI Due", (f"₹{meta['emi']}" if meta["emi"] else "—"))
+        + _hf("Call SID",meta["call_sid"] or "—",  mono=True)
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -528,48 +744,81 @@ async def transcript_detail(filename: str) -> HTMLResponse:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Transcript · {filename}</title>
   <style>
-    *{{box-sizing:border-box;margin:0;padding:0}}
-    body{{font-family:'Segoe UI',Arial,sans-serif;background:#0f172a;color:#e2e8f0;
-          padding:20px;max-width:800px;margin:0 auto}}
-    .back{{color:#818cf8;font-size:13px;text-decoration:none;display:inline-block;margin-bottom:16px}}
-    .back:hover{{text-decoration:underline}}
-    h1{{font-size:17px;font-weight:700;color:#f8fafc;margin-bottom:4px;word-break:break-all}}
-    .meta{{font-size:12px;color:#64748b;margin-bottom:20px}}
-    .chat-box{{background:#1e293b;border-radius:12px;padding:16px 20px;
-               display:flex;flex-direction:column;gap:14px}}
-    .row{{display:flex;align-items:flex-end;gap:10px}}
+    {_TRANSCRIPT_CSS}
+    .page-wrap{{max-width:820px;margin:0 auto;padding:22px 18px 50px}}
+    .back-btn{{display:inline-flex;align-items:center;gap:6px;font-size:13px;
+               color:#818cf8;padding:5px 12px;border-radius:8px;border:1px solid #1e293b;
+               margin-bottom:18px;background:#111827}}
+    .back-btn:hover{{background:#1e293b;text-decoration:none}}
+    /* header card */
+    .hdr-card{{background:#111827;border:1px solid #1e293b;border-radius:14px;padding:18px 22px;
+               margin-bottom:16px}}
+    .hdr-top{{display:flex;align-items:flex-start;justify-content:space-between;
+              flex-wrap:wrap;gap:10px;margin-bottom:14px}}
+    .hdr-dt{{font-size:14px;color:#94a3b8;font-family:monospace}}
+    .hdr-fields{{display:flex;flex-wrap:wrap;gap:8px 24px}}
+    .hf{{display:flex;flex-direction:column;gap:2px;min-width:120px}}
+    .hf-lbl{{font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+              color:#475569;font-weight:600}}
+    .hf-val{{font-size:13px;color:#cbd5e1}}
+    .hf-mono{{font-family:monospace;font-size:12px}}
+    /* chat box */
+    .chat-box{{background:#0d1424;border:1px solid #1a2540;border-radius:14px;
+               padding:20px;display:flex;flex-direction:column;gap:16px}}
+    .msg-row{{display:flex;align-items:flex-end;gap:10px}}
     .agent-row{{justify-content:flex-start}}
     .user-row{{justify-content:flex-end}}
-    .av{{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;
+    .av{{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;
          justify-content:center;font-size:12px;font-weight:700;flex-shrink:0}}
-    .agent-av{{background:#312e81;color:#a5b4fc}}
-    .user-av{{background:#14532d;color:#86efac;font-size:16px}}
-    .bubble{{padding:10px 14px;border-radius:16px;max-width:540px;
-             font-size:14px;line-height:1.6;word-break:break-word}}
-    .agent-bubble{{background:#1e3a5f;color:#bfdbfe;border-bottom-left-radius:4px}}
-    .user-bubble{{background:#14532d;color:#dcfce7;border-bottom-right-radius:4px}}
-    .ts{{font-size:10px;color:#475569;margin-top:3px;padding:0 4px}}
-    .sys-evt{{text-align:center;font-size:11px;color:#475569;background:#0f172a;
-              padding:4px 14px;border-radius:20px;align-self:center;margin:0 auto}}
-    .card{{background:#1e293b;border-radius:10px;padding:14px 16px}}
-    .card-title{{font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:10px}}
-    .stbl{{width:100%;border-collapse:collapse;font-size:13px}}
-    .stbl td{{padding:5px 8px;border-bottom:1px solid #334155}}
-    .stbl td:first-child{{color:#94a3b8;width:42%;font-size:12px}}
-    .stbl tr:last-child td{{border-bottom:none}}
-    a{{color:#818cf8;text-decoration:none}}
-    a:hover{{text-decoration:underline}}
+    .av-agent{{background:#1e1b4b;color:#a5b4fc}}
+    .av-user{{background:#14532d;color:#86efac;font-size:17px}}
+    .msg-wrap{{display:flex;flex-direction:column;max-width:78%}}
+    .bubble{{padding:11px 16px;border-radius:18px;font-size:14px;
+             line-height:1.65;word-break:break-word}}
+    .bubble-agent{{background:#1e2d4a;color:#bfdbfe;border-bottom-left-radius:4px}}
+    .bubble-user{{background:#14532d;color:#dcfce7;border-bottom-right-radius:4px}}
+    .msg-ts{{font-size:10px;color:#334155;margin-top:4px;padding:0 4px}}
+    .sys-pill{{text-align:center;font-size:11px;color:#475569;background:#0d1120;
+               border:1px solid #1e293b;padding:5px 16px;border-radius:20px;
+               align-self:center;margin:0 auto}}
+    /* detail card (summary / recording) */
+    .detail-card{{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:16px 20px}}
+    .detail-card-title{{font-size:13px;font-weight:600;color:#94a3b8;margin-bottom:12px;
+                         display:flex;align-items:center;gap:8px}}
+    .sum-tbl{{width:100%;border-collapse:collapse;font-size:13px}}
+    .sum-tbl td{{padding:7px 10px;border-bottom:1px solid #1a2540}}
+    .sum-tbl tr:last-child td{{border-bottom:none}}
+    .sum-key{{color:#64748b;width:38%;font-size:12px;vertical-align:top}}
+    .sum-val{{color:#cbd5e1;line-height:1.5}}
+    .mono{{font-family:monospace}}
   </style>
 </head>
 <body>
-  <a class="back" href="/transcripts">← All calls</a>
-  <h1>{filename}</h1>
-  <div class="meta">Call SID: {call_sid or '—'} &nbsp;·&nbsp; Outcome: {state or hangup_reason or '—'}</div>
-  <div class="chat-box">
-    {bubbles_html or '<div class="sys-evt">No conversation events found.</div>'}
+  <div class="page-wrap">
+    <a class="back-btn" href="/transcripts">← All calls</a>
+
+    <!-- Call header card -->
+    <div class="hdr-card">
+      <div class="hdr-top">
+        <div class="hdr-dt">📅 {dt_str}</div>
+        {badge_lg}
+      </div>
+      <div class="hdr-fields">
+        {header_fields}
+      </div>
+    </div>
+
+    <!-- Recording player -->
+    {recording_card}
+
+    <!-- Chat transcript -->
+    <div class="chat-box" style="margin-top:16px">
+      {bubbles_html or '<div class="sys-pill">No conversation events recorded.</div>'}
+    </div>
+
+    <!-- Call summary -->
+    {summary_card}
   </div>
-  {recording_html}
-  {summary_html}
 </body>
 </html>"""
     return HTMLResponse(html)

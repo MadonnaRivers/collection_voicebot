@@ -388,7 +388,14 @@ async def media_stream(ws: WebSocket) -> None:
                         if sess.call_sid in pending_ctx:
                             sess.ctx = pending_ctx.pop(sess.call_sid)
                         log.info("Stream=%s Call=%s", sess.stream_sid, sess.call_sid)
-                        record("call_start")
+                        record(
+                            "call_start",
+                            phone=sess.ctx.get("phone_number", ""),
+                            customer=sess.ctx.get("customer_name", ""),
+                            loan_id=sess.ctx.get("loan_id", ""),
+                            emi=sess.ctx.get("emi_overdue_amt") or sess.ctx.get("emi_amount", ""),
+                            emi_date=sess.ctx.get("emi_overdue_date") or sess.ctx.get("emi_due_date", ""),
+                        )
                         # Start Plivo server-side recording — URL delivered via /recording-callback
                         if sess.call_sid and RECORDING_CALLBACK_URL:
                             asyncio.create_task(
