@@ -53,8 +53,8 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 ORCHESTRATOR_TEMPERATURE    = float(os.getenv("ORCHESTRATOR_TEMPERATURE",    "0.1"))
 ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "28"))
 ORCHESTRATOR_API_RETRIES    = int(os.getenv("ORCHESTRATOR_API_RETRIES",      "3"))
-# Lower = faster answers + less latency (typical Hindi turn fits well under 400)
-ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "300"))
+# 400 tokens: enough for the longest payment_confirm template + JSON wrapper
+ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "400"))
 
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT              = int(os.getenv("PORT",           "5050"))

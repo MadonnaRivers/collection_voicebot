@@ -432,31 +432,23 @@ async def test_silence() -> None:
     t1 = await turn(ctx, [], "[घटना: कॉल जुड़ गई — ग्राहक ने फोन उठाया। ईज़ी होम फाइनेंस की ओर से अदिति के रूप में परिचय दें; संदर्भ से नाम, बकाया राशि व देय तिथि बताएं; पूछें वे कब तक भुगतान कर सकते हैं।]")
     _patch(ctx, t1); history = _hist(history, None, t1.get("say", ""))
 
-    # First silence
-    t2 = await turn(ctx, history, "[मौन — कोई उत्तर नहीं]")
-    _patch(ctx, t2); history = _hist(history, "[मौन — कोई उत्तर नहीं]", t2.get("say", ""))
-    check("silence_count incremented",
-          int(ctx.get("silence_count", "0")) >= 1,
-          ctx.get("silence_count", "0"))
+    # First silence — LLM receives [SILENCE_1] from Python code
+    t2 = await turn(ctx, history, "[SILENCE_1: No response. Ask once more, very briefly.]")
+    _patch(ctx, t2); history = _hist(history, "[SILENCE_1]", t2.get("say", ""))
     check("ask again on 1st silence", bool(t2.get("say")), t2.get("say", "")[:60])
     check("not end_call on 1st silence", not t2.get("end_call"))
+    check("no silence_count in ctx (Python-tracked now)", "silence_count" not in ctx)
     if VERBOSE: print(f"      [silence 1] say → {t2.get('say','')}")
 
-    # Second silence
-    t3 = await turn(ctx, history, "[मौन — कोई उत्तर नहीं]")
-    _patch(ctx, t3); history = _hist(history, "[मौन — कोई उत्तर नहीं]", t3.get("say", ""))
-    check("silence_count >= 2 after 2nd silence",
-          int(ctx.get("silence_count", "0")) >= 2,
-          ctx.get("silence_count", "0"))
-    if VERBOSE: print(f"      [silence 2] say → {t3.get('say','')}")
-
-    # Third silence → should close
-    t4 = await turn(ctx, history, "[मौन — कोई उत्तर नहीं]")
-    _patch(ctx, t4)
-    check("end_call on 3rd silence (or by turn 3)",
-          t4.get("end_call") or int(ctx.get("silence_count", "0")) >= 3,
-          f"end_call={t4.get('end_call')} silence_count={ctx.get('silence_count','0')}")
-    if VERBOSE: print(f"      [silence 3] say → {t4.get('say','')}")
+    # Second silence — LLM receives [SILENCE_2], must close
+    t3 = await turn(ctx, history, "[SILENCE_2: No response again. Say the no-response goodbye "
+                                   "and set end_call=true, hangup_reason=no_response.]")
+    _patch(ctx, t3)
+    check("end_call=true on 2nd silence", t3.get("end_call"), f"end_call={t3.get('end_call')}")
+    check("hangup_reason=no_response", t3.get("hangup_reason") == "no_response",
+          t3.get("hangup_reason", "?"))
+    check("goodbye in say", bool(t3.get("say")), t3.get("say", "")[:60])
+    if VERBOSE: print(f"      [silence 2 / goodbye] say → {t3.get('say','')}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -515,7 +507,8 @@ async def test_json_stability() -> None:
     ctx = _fresh(); history = []
     REQUIRED_KEYS = {"say", "end_call", "context_patch", "hangup_reason", "call_phase"}
     VALID_PHASES  = {"ptp","deceased","partial","payment_confirm","cannot_pay",
-                     "already_paid","callback","opening","other","recovery","error","llm"}
+                     "already_paid","callback","opening","other","recovery","error","llm",
+                     "no_response"}
 
     utterances = [
         "हाँ",

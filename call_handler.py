@@ -45,6 +45,12 @@ log = logging.getLogger("aditi")
 
 _VAD_HANGOVER_FRAMES = max(1, VAD_HANGOVER_MS // 20)
 
+# Keys the LLM must never write into session context — strip them before applying.
+_FORBIDDEN_CTX_KEYS: frozenset[str] = frozenset({
+    "silence_count", "error_count", "retry_count", "turn_count",
+    "loop_count", "attempt", "state", "call_phase",
+})
+
 # Global denoiser thread pool — shared across ALL concurrent calls.
 # 16 workers handles 100 simultaneous calls comfortably (each call submits
 # one 20 ms frame every 20 ms; numpy releases the GIL so threads run in parallel).
@@ -565,7 +571,12 @@ async def media_stream(ws: WebSocket) -> None:
             ) -> bool:
                 patch = turn.get("context_patch")
                 if isinstance(patch, dict):
-                    sess.ctx.update({str(k): str(v) for k, v in patch.items()})
+                    safe = {str(k): str(v) for k, v in patch.items()
+                            if k not in _FORBIDDEN_CTX_KEYS}
+                    if len(safe) < len(patch):
+                        log.warning("LLM tried to set forbidden ctx keys: %s",
+                                    set(patch) - set(safe))
+                    sess.ctx.update(safe)
                 sess.state = str(turn.get("call_phase") or "llm")
                 record(
                     "llm_turn",
@@ -639,7 +650,12 @@ async def media_stream(ws: WebSocket) -> None:
                 # Apply metadata (context_patch, state, log)
                 patch = turn.get("context_patch")
                 if isinstance(patch, dict):
-                    sess.ctx.update({str(k): str(v) for k, v in patch.items()})
+                    safe = {str(k): str(v) for k, v in patch.items()
+                            if k not in _FORBIDDEN_CTX_KEYS}
+                    if len(safe) < len(patch):
+                        log.warning("LLM tried to set forbidden ctx keys: %s",
+                                    set(patch) - set(safe))
+                    sess.ctx.update(safe)
                 sess.state = str(turn.get("call_phase") or "llm")
                 record(
                     "llm_turn",
