@@ -45,6 +45,11 @@ log = logging.getLogger("aditi")
 
 _VAD_HANGOVER_FRAMES = max(1, VAD_HANGOVER_MS // 20)
 
+# Global denoiser thread pool — shared across ALL concurrent calls.
+# 16 workers handles 100 simultaneous calls comfortably (each call submits
+# one 20 ms frame every 20 ms; numpy releases the GIL so threads run in parallel).
+_DENOISE_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=16, thread_name_prefix="denoise")
+
 
 
 
@@ -71,7 +76,6 @@ async def media_stream(ws: WebSocket) -> None:
         )
         if DENOISE_ENABLED else None
     )
-    _denoise_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
     _loop = asyncio.get_event_loop()
 
     _vad_inst           = webrtcvad.Vad(VAD_MODE) if VAD_ENABLED else None
@@ -104,6 +108,15 @@ async def media_stream(ws: WebSocket) -> None:
 
     try:
         # ── Transcript logger ────────────────────────────────────────────────
+        # _write_line is called via run_in_executor so disk I/O never blocks
+        # the asyncio event loop (critical at 50-100 concurrent calls).
+        def _write_line(path: str, line: str) -> None:
+            try:
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write(line + "\n")
+            except OSError:
+                pass
+
         def record(event: str, **fields: Any) -> None:
             if not sess.transcript_path:
                 ts  = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
@@ -117,17 +130,18 @@ async def media_stream(ws: WebSocket) -> None:
                 "ts":    datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z",
                 "event": event, "state": sess.state, "sid": sess.call_sid, **fields,
             }
-            try:
-                with open(sess.transcript_path, "a", encoding="utf-8") as fh:
-                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-            except OSError:
-                pass
+            line = json.dumps(row, ensure_ascii=False)
+            # Fire-and-forget — do NOT await; record() is called from sync contexts too
+            asyncio.get_event_loop().run_in_executor(
+                _DENOISE_POOL, _write_line, sess.transcript_path, line
+            )
 
         # ── Push µ-law frames to carrier ─────────────────────────────────────
         _push_frame_count   = [0]
         _utt_push_start     = [0.0]   # monotonic when current utterance push started
         _utt_bytes_pushed   = [0]     # bytes sent in current utterance
         _audio_drain_time   = [0.0]   # estimated monotonic when Plivo finishes playing
+        _stt_connected      = [True]  # False while STT is reconnecting — skip frames
 
         async def push(chunk: bytes) -> None:
             if sess.done or abort[0] or not sess.stream_sid:
@@ -332,7 +346,7 @@ async def media_stream(ws: WebSocket) -> None:
                             pcm16 = audioop.ulaw2lin(mulaw, 2)
                             if _denoiser is not None:
                                 pcm16 = await _loop.run_in_executor(
-                                    _denoise_pool, _denoiser.feed_sync, pcm16
+                                    _DENOISE_POOL, _denoiser.feed_sync, pcm16
                                 )
                             if _vad_inst is not None and len(pcm16) == 320:
                                 try:
@@ -345,6 +359,8 @@ async def media_stream(ws: WebSocket) -> None:
                                     _vad_hangover_left[0] -= 1
                                 else:
                                     pcm16 = b"\x00" * 320
+                            if not _stt_connected[0]:
+                                continue  # STT is reconnecting — skip frame
                             await stt_ws.send(json.dumps({
                                 "audio": {
                                     "data":        _b64.b64encode(pcm16).decode(),
@@ -353,10 +369,9 @@ async def media_stream(ws: WebSocket) -> None:
                                 }
                             }))
                         except (ws_exc.ConnectionClosedOK, ws_exc.ConnectionClosed):
-                            break
+                            continue  # STT dropped — reconnect task will restore it
                         except Exception as exc:
-                            log.error("STT send error: %s", exc)
-                            break
+                            log.debug("STT send error (frame skipped): %s", exc)
 
                     elif evt_type == "mark_ack":
                         if sess.marks_out > 0:
@@ -373,6 +388,8 @@ async def media_stream(ws: WebSocket) -> None:
                 if "WebSocket is not connected" not in str(exc):
                     raise
             finally:
+                abort[0] = True          # stop TTS push immediately — carrier is gone
+                _stt_connected[0] = False  # prevent recv_ws from trying to send to STT
                 try:
                     await stt_ws.close()
                 except Exception:
@@ -491,11 +508,16 @@ async def media_stream(ws: WebSocket) -> None:
                 if not sess.done:
                     log.error("STT recv error: %s", exc)
             finally:
-                if not sess.done:
-                    # ── Try to reconnect STT once before ending the call ──────
+                # Only attempt reconnect if the carrier is still alive.
+                # If abort[0] is set, recv_ws already closed the carrier — no point
+                # reconnecting STT (the call is ending anyway).
+                if not sess.done and not abort[0] and not sess._hangup_started:
+                    _stt_connected[0] = False  # pause audio forwarding during reconnect
                     log.warning("STT WebSocket dropped — attempting reconnect …")
                     reconnected = False
                     for _r in range(3):
+                        if abort[0] or sess.done:
+                            break  # carrier died while we were reconnecting
                         try:
                             new_ws = await asyncio.wait_for(
                                 websockets.connect(
@@ -507,11 +529,12 @@ async def media_stream(ws: WebSocket) -> None:
                                 timeout=6.0,
                             )
                             stt_ws = new_ws
+                            _stt_connected[0] = True  # resume audio forwarding
                             reconnected = True
                             log.info("STT reconnected (attempt %d)", _r + 1)
                             # Re-enter the receive loop with the new socket
                             async for msg in stt_ws:
-                                if sess.done:
+                                if sess.done or abort[0]:
                                     break
                                 if isinstance(msg, bytes):
                                     continue
@@ -520,7 +543,7 @@ async def media_stream(ws: WebSocket) -> None:
                         except Exception as exc2:
                             log.warning("STT reconnect attempt %d failed: %s", _r + 1, exc2)
                             await asyncio.sleep(0.5)
-                    if not reconnected and not sess.done:
+                    if not reconnected and not sess.done and not abort[0]:
                         log.error("STT reconnect failed — ending call")
                         asyncio.create_task(hangup("stt_failure"))
 
@@ -663,27 +686,42 @@ async def media_stream(ws: WebSocket) -> None:
                 if await _apply_turn(turn, None):
                     return
 
-            _silence_count = 0
+            _silence_count       = 0
+            _total_silence_count = 0   # never resets — hard ceiling regardless of noise
+            _turn_count          = 0
+            _MAX_TURNS           = 20  # absolute ceiling — prevents infinite conversation
+
             while not sess.done:
+                # ── Hard turn ceiling ───────────────────────────────────────────
+                if _turn_count >= _MAX_TURNS:
+                    log.warning("LLM: max turns (%d) reached — force ending call", _MAX_TURNS)
+                    await _stream_apply_turn(
+                        "[FORCE_END: Maximum conversation length reached. "
+                        "Say a brief goodbye and set end_call=true, hangup_reason=max_turns.]",
+                        "[अधिकतम मोड़ — कॉल समाप्त]",
+                    )
+                    if not sess.done:
+                        await hangup("max_turns")
+                    break
+
                 try:
                     utterance = await asyncio.wait_for(utt_q.get(), timeout=SILENCE_TIMEOUT_SEC)
-                    _silence_count = 0   # reset on real speech
+                    _silence_count = 0   # reset per-noise-burst on real speech
+                    # _total_silence_count is intentionally NOT reset — it only goes up
                 except asyncio.TimeoutError:
                     if sess.done:
                         break
-                    _silence_count += 1
-                    log.info("LLM: %.0f s silence (count=%d)", SILENCE_TIMEOUT_SEC, _silence_count)
+                    _silence_count       += 1
+                    _total_silence_count += 1
+                    log.info(
+                        "LLM: %.0f s silence (burst=%d total=%d)",
+                        SILENCE_TIMEOUT_SEC, _silence_count, _total_silence_count,
+                    )
 
-                    if _silence_count == 1:
-                        # First silence — ask once more
-                        if await _stream_apply_turn(
-                            "[SILENCE_1: No response. Ask once more, very briefly.]",
-                            "[मौन — कोई उत्तर नहीं]",
-                        ):
-                            break
-                    else:
-                        # Second silence — closing statement then force-end
-                        log.info("LLM: second silence — ending call")
+                    # Hard ceiling: 4 total silence events across the whole call
+                    # catches cases where noise resets _silence_count before it hits 2
+                    if _total_silence_count >= 4 or _silence_count >= 2:
+                        log.info("LLM: silence ceiling hit — ending call")
                         await _stream_apply_turn(
                             "[SILENCE_2: No response again. Say the no-response goodbye "
                             "and set end_call=true, hangup_reason=no_response.]",
@@ -691,6 +729,13 @@ async def media_stream(ws: WebSocket) -> None:
                         )
                         if not sess.done:
                             await hangup("silence_timeout")
+                        break
+
+                    # First silence — ask once more
+                    if await _stream_apply_turn(
+                        "[SILENCE_1: No response. Ask once more, very briefly.]",
+                        "[मौन — कोई उत्तर नहीं]",
+                    ):
                         break
                     continue
 
@@ -705,10 +750,11 @@ async def media_stream(ws: WebSocket) -> None:
 
                 utterance = utterance.strip() or "[silence]"
                 record("user_turn", text=utterance)
+                _turn_count += 1
                 if await _stream_apply_turn(utterance, utterance):
                     break
 
-            log.info("LLM loop ended (phase=%s)", sess.state)
+            log.info("LLM loop ended (phase=%s, turns=%d)", sess.state, _turn_count)
 
         await asyncio.gather(recv_ws(), recv_sarvam_stt(), llm_conversation_loop())
 
@@ -720,7 +766,6 @@ async def media_stream(ws: WebSocket) -> None:
                 await hangup("unexpected_disconnect")
         except Exception as exc:
             log.warning("cleanup hangup error: %s", exc)
-        _denoise_pool.shutdown(wait=False)
         try:
             await stt_ws.close()
         except Exception:

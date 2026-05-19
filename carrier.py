@@ -124,7 +124,9 @@ async def hangup(call_sid: str) -> None:
             f"{_BASE}/Call/{call_sid}/",
             auth=_AUTH,
         )
-        if r.status_code >= 400:
+        if r.status_code == 404:
+            log.info("Plivo hangup %s → already gone (404)", call_sid)
+        elif r.status_code >= 400:
             log.warning("Plivo hangup %s → HTTP %d: %s", call_sid, r.status_code, r.text[:200])
         else:
             log.info("Plivo call %s terminated", call_sid)

@@ -29,6 +29,16 @@ _log_buffer.attach()
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    from config import RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL
+    if not RECORDING_CALLBACK_URL:
+        log.warning(
+            "RECORDING_CALLBACK_URL is not set — Plivo recording callback disabled. "
+            "MP3 files will NOT be sent to n8n. Set RECORDING_CALLBACK_URL=https://<ngrok>/recording-callback"
+        )
+    else:
+        log.info("Recording callback URL: %s", RECORDING_CALLBACK_URL)
+    if not AUDIO_TRANSCRIPT_WEBHOOK_URL:
+        log.warning("AUDIO_TRANSCRIPT_WEBHOOK_URL is not set — audio files will not be forwarded to n8n")
     yield                          # server is running
     await _http_client.aclose()   # clean up httpx on shutdown → no "Event loop is closed" warning
     log.info("HTTP client closed")

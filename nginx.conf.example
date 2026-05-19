@@ -1,0 +1,61 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# nginx config for voicebot.easyhomefinance.in
+#
+# IMPORTANT: Without the WebSocket upgrade headers below, Plivo's /media-stream
+# connection will be rejected by nginx immediately → call drops in <1 second.
+#
+# Place this at: /etc/nginx/sites-available/voicebot
+# Then: sudo ln -s /etc/nginx/sites-available/voicebot /etc/nginx/sites-enabled/
+#        sudo nginx -t && sudo systemctl reload nginx
+# ──────────────────────────────────────────────────────────────────────────────
+
+server {
+    listen 80;
+    server_name voicebot.easyhomefinance.in;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name voicebot.easyhomefinance.in;
+
+    # SSL certificates (update paths to match your cert location)
+    ssl_certificate     /etc/letsencrypt/live/voicebot.easyhomefinance.in/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/voicebot.easyhomefinance.in/privkey.pem;
+
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+
+    # ── CRITICAL: WebSocket support ───────────────────────────────────────────
+    # /media-stream is the Plivo audio stream — MUST be proxied as WebSocket.
+    # Without these headers the connection is rejected and calls drop instantly.
+    location /media-stream {
+        proxy_pass         http://127.0.0.1:5050;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+        proxy_read_timeout 3600s;   # keep alive for up to 1 hour (long calls)
+        proxy_send_timeout 3600s;
+    }
+
+    # ── /ws-ping — diagnostic WebSocket test endpoint ─────────────────────────
+    location /ws-ping {
+        proxy_pass         http://127.0.0.1:5050;
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+    }
+
+    # ── All other HTTP routes (REST API, webhook callbacks, transcript viewer) ─
+    location / {
+        proxy_pass         http://127.0.0.1:5050;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+}
