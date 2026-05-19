@@ -312,45 +312,88 @@ async def recording_callback(request: Request) -> JSONResponse:
         await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_rec)
         log.info("Recording fields pushed to push_data webhook — call=%s", call_uuid)
 
+    # ── 4. Download Plivo MP3 and push to audio_and_transcripts webhook ────────
+    # Run as a background task so the callback returns immediately to Plivo.
+    import asyncio as _asyncio
+    _asyncio.create_task(
+        _push_audio_transcript(
+            call_sid=call_uuid,
+            recording_url=record_url,
+            recording_id=recording_id,
+            duration=str(duration),
+            ts_str=ts_str,
+            transcript_path=transcript_path,
+        )
+    )
+    log.info("Plivo MP3 download+upload queued — call=%s", call_uuid)
+
     return JSONResponse({"status": "ok"})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Helper: push combined recording URL to the n8n webhook
-# Payload is intentionally minimal — just the audio link + call identity.
-# The recording is a single combined MP3 (both caller + bot, record_channel=both).
+# Download the Plivo MP3 recording and POST it to the audio_and_transcripts webhook.
+# Called from recording_callback once Plivo signals the recording is ready.
 # ─────────────────────────────────────────────────────────────────────────────
 async def _push_audio_transcript(
     call_sid: str,
     recording_url: str,
+    recording_id: str,
     duration: str,
     ts_str: str,
     transcript_path: str,
 ) -> None:
     from pathlib import Path as _Path
 
-    # Build a stable filename for n8n binary storage.
-    # If transcript is known, reuse its stem so calls are easy to correlate.
+    # Derive a stable filename: use transcript stem so it's easy to correlate.
     stem = _Path(transcript_path).stem if transcript_path else call_sid
-    file_name = f"{stem}_combined.mp3"
+    file_name = f"{stem}.mp3"
+
+    # Pull loan_id / customer from transcript for richer webhook payload.
+    loan_id = customer = phone = ""
+    if transcript_path:
+        try:
+            import json as _json
+            for ln in _Path(transcript_path).read_text(encoding="utf-8").strip().splitlines():
+                row = _json.loads(ln)
+                if row.get("event") == "call_start":
+                    loan_id  = row.get("loan_id", "")
+                    customer = row.get("customer", "")
+                    phone    = row.get("phone", "")
+                    break
+        except Exception:
+            pass
+
+    if not AUDIO_TRANSCRIPT_WEBHOOK_URL:
+        log.info("audio_and_transcripts webhook not configured — skipping")
+        return
+
     try:
-        # 1) Download Plivo-hosted combined MP3
-        dl = await _http_client.get(recording_url, timeout=60.0)
+        # 1) Download the Plivo-hosted MP3 — requires Basic Auth with Plivo credentials
+        from config import PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN
+        log.info("Downloading Plivo recording for call=%s url=%s", call_sid, recording_url)
+        dl = await _http_client.get(
+            recording_url,
+            auth=(PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN),
+            timeout=60.0,
+        )
         dl.raise_for_status()
         audio_bytes = dl.content
         if not audio_bytes:
-            log.warning("audio_and_transcripts webhook skipped: empty audio for call=%s", call_sid)
+            log.warning("audio_and_transcripts skipped: empty Plivo audio for call=%s", call_sid)
             return
 
-        # 2) Upload binary to n8n as multipart/form-data (same shape as curl --form file=@...)
+        # 2) POST multipart/form-data directly to n8n
         form_fields = {
-            "call_sid": call_sid,
-            "duration_sec": duration,
-            "ts": ts_str,
+            "call_sid":      call_sid,
+            "recording_id":  recording_id,
+            "recording_url": recording_url,
+            "loan_id":       loan_id,
+            "customer":      customer,
+            "phone":         phone,
+            "duration_sec":  duration,
+            "ts":            ts_str,
         }
-        files = {
-            "file": (file_name, audio_bytes, "audio/mpeg"),
-        }
+        files = {"file": (file_name, audio_bytes, "audio/mpeg")}
         r = await _http_client.post(
             AUDIO_TRANSCRIPT_WEBHOOK_URL,
             data=form_fields,
@@ -358,10 +401,8 @@ async def _push_audio_transcript(
             timeout=90.0,
         )
         log.info(
-            "audio_and_transcripts webhook upload → HTTP %d call=%s bytes=%d",
-            r.status_code,
-            call_sid,
-            len(audio_bytes),
+            "audio_and_transcripts webhook → HTTP %d  call=%s  bytes=%d  file=%s",
+            r.status_code, call_sid, len(audio_bytes), file_name,
         )
     except Exception as exc:
         log.warning("audio_and_transcripts webhook failed: %s", exc)

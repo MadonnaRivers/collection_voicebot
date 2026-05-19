@@ -3,7 +3,6 @@ session.py — CallSession dataclass and shared pending-context registry.
 """
 from __future__ import annotations
 import dataclasses
-from typing import List
 
 # Stores per-call context indexed by Plivo CallUUID.
 # Populated by /make-call route; consumed by the media-stream WebSocket handler.
@@ -40,8 +39,4 @@ class CallSession:
     # Hangup guard — set synchronously before first await to prevent double-hangup
     _hangup_started: bool = False
 
-    # Local audio capture buffers (PCM16, 8000 Hz, mono)
-    _customer_audio: List[bytes] = dataclasses.field(default_factory=list)
-    _bot_audio: List[bytes] = dataclasses.field(default_factory=list)
-    # Byte offset in customer audio when bot starts speaking (for stereo sync)
-    _bot_audio_offset_bytes: int = 0
+    # (audio capture buffers removed — Plivo server-side recording is used instead)
