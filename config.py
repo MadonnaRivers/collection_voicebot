@@ -60,6 +60,8 @@ ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "40
 PORT              = int(os.getenv("PORT",           "5050"))
 TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
 RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "recordings")
+LOGS_DIR          = os.getenv("LOGS_DIR",          "logs")
+LOG_FILE          = os.getenv("LOG_FILE",          "logs/aditi.log")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
 # Post-call JSON (all CRM fields) — pushed to n8n /webhook/push_data
@@ -79,7 +81,7 @@ AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
 
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
-SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "6.0"))
+SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "8.0"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 # 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences

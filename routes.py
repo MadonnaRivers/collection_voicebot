@@ -896,16 +896,17 @@ async def transcript_detail(filename: str) -> HTMLResponse:
 @app.get("/logs", response_class=HTMLResponse)
 async def logs_page() -> HTMLResponse:
     """
-    Live in-memory log viewer. Shows last 600 log lines + server state.
-    Hit /logs in your browser to diagnose issues without server SSH access.
+    Persistent log viewer. Reads from logs/aditi.log (survives restarts).
+    All log lines shown, newest first. Manual refresh only.
     """
     import json as _json
     from pathlib import Path as _Path
     from datetime import datetime, timezone
     from session import pending_ctx, recording_pending
-    from config import CALL_SUMMARY_WEBHOOK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL
+    from config import CALL_SUMMARY_WEBHOOK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL, LOG_FILE
 
-    lines = _log_buffer.get_lines()
+    # Prefer file-based logs (persists across restarts); fall back to memory
+    lines = _log_buffer.get_lines_from_file()
 
     # ── colour map ────────────────────────────────────────────────────────────
     _colours = {
@@ -994,7 +995,8 @@ async def logs_page() -> HTMLResponse:
         ("Transcript files", str(len(list(_Path(TRANSCRIPTS_DIR).glob("*.jsonl")))) if _Path(TRANSCRIPTS_DIR).exists() else "0"),
         ("push_data webhook", CALL_SUMMARY_WEBHOOK_URL or "(not set ⚠️)"),
         ("audio webhook", AUDIO_TRANSCRIPT_WEBHOOK_URL or "(not set ⚠️)"),
-        ("Log lines captured", str(len(lines))),
+        ("Log file", LOG_FILE),
+        ("Log lines", str(len(lines))),
     ]
     state_html = "".join(
         f"<tr><td style='color:#64748b;font-size:12px;padding:6px 10px;border-bottom:1px solid #1e293b;width:35%'>{k}</td>"
@@ -1007,8 +1009,7 @@ async def logs_page() -> HTMLResponse:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="refresh" content="15">
-  <title>Aditi — Live Logs</title>
+  <title>Aditi — Logs</title>
   <style>
     *{{box-sizing:border-box;margin:0;padding:0}}
     body{{font-family:'Segoe UI',Arial,sans-serif;background:#0a0f1e;color:#e2e8f0;padding:20px}}
@@ -1018,15 +1019,15 @@ async def logs_page() -> HTMLResponse:
     .header h1{{font-size:18px;font-weight:700;color:#f1f5f9}}
     .badge{{background:#1e293b;color:#64748b;font-size:11px;padding:2px 10px;border-radius:20px}}
     .refresh{{margin-left:auto;font-size:12px;color:#818cf8;text-decoration:none;border:1px solid #312e81;padding:4px 12px;border-radius:6px}}
-    .log-box{{background:#0a0f1e;border:1px solid #1e293b;border-radius:8px;padding:12px;max-height:520px;overflow-y:auto}}
+    .log-box{{background:#0a0f1e;border:1px solid #1e293b;border-radius:8px;padding:12px;overflow-y:auto}}
     a{{color:#818cf8;text-decoration:none}}
   </style>
 </head>
 <body>
   <div class="header">
-    <h1>🔍 Aditi — Live Logs</h1>
-    <span class="badge">auto-refresh 15s</span>
-    <a class="refresh" href="/logs">⟳ Refresh now</a>
+    <h1>🔍 Aditi — Logs</h1>
+    <span class="badge">persisted · all lines</span>
+    <a class="refresh" href="/logs">⟳ Refresh</a>
   </div>
 
   <h2>Server State</h2>
@@ -1039,7 +1040,7 @@ async def logs_page() -> HTMLResponse:
   <h2>Recent Transcripts (last 8)</h2>
   <div class="card">{tx_table}</div>
 
-  <h2>Log Output (newest first · last {len(lines)} lines)</h2>
+  <h2>Log Output (newest first · {len(lines)} lines total)</h2>
   <div class="card">
     <div class="log-box">{log_html}</div>
   </div>

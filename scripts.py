@@ -16,7 +16,7 @@ DEFAULT_CUSTOMER: dict[str, str] = {
     "phone_number":     os.getenv("DEFAULT_PHONE_NUMBER",     ""),
     "loan_id":          os.getenv("DEFAULT_LOAN_ID",          "EH12345"),
     "emi_overdue_amt":  os.getenv("DEFAULT_EMI_OVERDUE_AMT",  "8,500"),   # formatted e.g. "8,500"
-    "emi_overdue_date": os.getenv("DEFAULT_EMI_OVERDUE_DATE", "5 March 2026"),
+    "emi_overdue_date": os.getenv("DEFAULT_EMI_OVERDUE_DATE", ""),
     "min_partial":      os.getenv("DEFAULT_MIN_PARTIAL",      "1,500"),   # formatted e.g. "1,500"
     "payment_deadline": os.getenv("DEFAULT_PAYMENT_DEADLINE", ""),
 
