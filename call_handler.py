@@ -153,6 +153,12 @@ async def media_stream(ws: WebSocket) -> None:
             if sess.done or abort[0] or sess._hangup_started or not sess.stream_sid:
                 return
             try:
+                # Pace frames to real-time (160 bytes = 20 ms at 8 kHz µ-law).
+                # asyncio.sleep(0) only yields ~0.1 ms — all frames would arrive
+                # at Plivo within a few ms, making server-side recordings garbled
+                # because Plivo timestamps by WebSocket arrival, not PSTN playback.
+                _FRAME_DUR = 160 / 8000.0          # 0.020 s per frame
+                _frame_deadline = time.monotonic()
                 for offset in range(0, len(chunk), 160):
                     if sess.done or abort[0] or sess._hangup_started:
                         return
@@ -166,7 +172,11 @@ async def media_stream(ws: WebSocket) -> None:
                     _utt_bytes_pushed[0] += len(frame)
                     # Update estimated Plivo drain time: push_start + total_audio_duration
                     _audio_drain_time[0] = _utt_push_start[0] + _utt_bytes_pushed[0] / 8000.0
-                    await asyncio.sleep(0)
+                    # Sleep until the next frame's real-time deadline.
+                    # max(0, …) prevents negative sleep if send_json was slow.
+                    _frame_deadline += _FRAME_DUR
+                    sleep_for = _frame_deadline - time.monotonic()
+                    await asyncio.sleep(max(0.0, sleep_for))
             except Exception as exc:
                 # Carrier WebSocket closed while we were mid-send — this is expected
                 # whenever a call ends while TTS is playing. Set abort so no further
