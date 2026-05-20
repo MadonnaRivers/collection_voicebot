@@ -7,12 +7,18 @@ Real-time strategy:
   • tts_stream_pipelined()— Splits long text into sentences and pipelines them:
                             starts playing sentence-1 while sentence-2 is being
                             fetched, reducing time-to-first-audio for long scripts.
+
+Concurrency:
+  • _TTS_SEM caps simultaneous Sarvam requests across all calls.
+    Set TTS_CONCURRENCY in .env (default 15). Raise this when on a higher Sarvam plan.
+  • 429 responses trigger exponential backoff + retry before giving up.
 """
 from __future__ import annotations
 import asyncio
 import base64
 import json
 import logging
+import os
 import re
 from typing import Awaitable, Callable
 
@@ -20,6 +26,24 @@ from clients import http
 from config import SARVAM_API_KEY, SARVAM_VOICE, TTS_PACE, SARVAM_TTS_STREAM_URL, SARVAM_TTS_REST_URL
 
 log = logging.getLogger("aditi")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Global TTS concurrency limiter
+# Caps simultaneous Sarvam requests so rate limits aren't hit in bulk.
+# Default 15 — safe for Sarvam starter plan with 50 concurrent calls.
+# Raise TTS_CONCURRENCY in .env when on a paid plan with higher RPM.
+# ─────────────────────────────────────────────────────────────────────────────
+_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "50"))
+_TTS_SEM: asyncio.Semaphore | None = None
+
+def _sem() -> asyncio.Semaphore:
+    global _TTS_SEM
+    if _TTS_SEM is None:
+        _TTS_SEM = asyncio.Semaphore(_TTS_CONCURRENCY)
+    return _TTS_SEM
+
+# Backoff delays (seconds) between 429 retries — released outside semaphore
+_429_BACKOFFS = (0.5, 1.5, 3.5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -58,83 +82,122 @@ async def tts_stream(
     on_chunk: Callable[[bytes], Awaitable[None]],
     abort: list[bool],
 ) -> bool:
-    """Stream TTS audio chunks to on_chunk. Returns True if audio was produced."""
-    try:
-        async with http.stream(
-            "POST", SARVAM_TTS_STREAM_URL,
-            json=_tts_payload(text), headers=_tts_headers(),
-        ) as resp:
-            if resp.status_code >= 400:
-                body = await resp.aread()
-                log.error("TTS HTTP %d: %s", resp.status_code, body[:200])
+    """Stream TTS audio chunks to on_chunk. Returns True if audio was produced.
+    Acquires global semaphore before each attempt; retries up to 3× on 429."""
+    sem = _sem()
+    for attempt in range(len(_429_BACKOFFS) + 1):
+        if abort[0]:
+            return False
+        async with sem:
+            try:
+                async with http.stream(
+                    "POST", SARVAM_TTS_STREAM_URL,
+                    json=_tts_payload(text), headers=_tts_headers(),
+                ) as resp:
+                    if resp.status_code == 429:
+                        body = await resp.aread()
+                        log.warning(
+                            "TTS stream 429 (attempt %d/%d): %s",
+                            attempt + 1, len(_429_BACKOFFS) + 1, body[:100],
+                        )
+                        # fall through to backoff below
+                    elif resp.status_code >= 400:
+                        body = await resp.aread()
+                        log.error("TTS HTTP %d: %s", resp.status_code, body[:200])
+                        return False
+                    else:
+                        # ── Normal streaming path ──────────────────────────
+                        container: str | None = None
+                        wav_buf = b""
+                        wav_started = False
+                        got_audio = False
+
+                        async for chunk in resp.aiter_bytes(1024):
+                            if abort[0]:
+                                return True
+                            if not chunk:
+                                continue
+                            if container is None:
+                                probe = chunk[:12]
+                                if probe.startswith(b"RIFF") and b"WAVE" in probe:
+                                    container = "wav"
+                                elif probe[:1] in (b"{", b"["):
+                                    container = "json"
+                                else:
+                                    container = "raw"
+
+                            if container == "raw":
+                                got_audio = True
+                                await on_chunk(chunk)
+                            elif container == "json":
+                                tail = await resp.aread()
+                                try:
+                                    data = json.loads((chunk + tail).decode("utf-8", errors="ignore"))
+                                    b64  = (data.get("audios") or [None])[0] or data.get("audio")
+                                    if b64:
+                                        got_audio = True
+                                        await on_chunk(base64.b64decode(b64))
+                                except Exception as exc:
+                                    log.warning("TTS JSON decode: %s", exc)
+                                return got_audio
+                            else:
+                                if not wav_started:
+                                    wav_buf += chunk
+                                    idx = wav_buf.find(b"data")
+                                    if idx == -1:
+                                        continue
+                                    start = idx + 8
+                                    audio = wav_buf[start:]
+                                    wav_buf = b""
+                                    wav_started = True
+                                    if audio:
+                                        got_audio = True
+                                        await on_chunk(audio)
+                                else:
+                                    got_audio = True
+                                    await on_chunk(chunk)
+
+                        return got_audio
+
+            except Exception as exc:
+                log.error("TTS stream error: %s", exc)
                 return False
 
-            container: str | None = None
-            wav_buf = b""
-            wav_started = False
-            got_audio = False
+        # 429 backoff — semaphore released while we wait so others can proceed
+        if attempt < len(_429_BACKOFFS):
+            await asyncio.sleep(_429_BACKOFFS[attempt])
 
-            async for chunk in resp.aiter_bytes(1024):  # 1 KB → ~128 ms at 8 kHz; first audio delivered sooner
-                if abort[0]:
-                    return True
-                if not chunk:
-                    continue
-                if container is None:
-                    probe = chunk[:12]
-                    if probe.startswith(b"RIFF") and b"WAVE" in probe:
-                        container = "wav"
-                    elif probe[:1] in (b"{", b"["):
-                        container = "json"
-                    else:
-                        container = "raw"
-
-                if container == "raw":
-                    got_audio = True
-                    await on_chunk(chunk)
-                elif container == "json":
-                    tail = await resp.aread()
-                    try:
-                        data = json.loads((chunk + tail).decode("utf-8", errors="ignore"))
-                        b64  = (data.get("audios") or [None])[0] or data.get("audio")
-                        if b64:
-                            got_audio = True
-                            await on_chunk(base64.b64decode(b64))
-                    except Exception as exc:
-                        log.warning("TTS JSON decode: %s", exc)
-                    return got_audio
-                else:
-                    if not wav_started:
-                        wav_buf += chunk
-                        idx = wav_buf.find(b"data")
-                        if idx == -1:
-                            continue
-                        start = idx + 8
-                        audio = wav_buf[start:]
-                        wav_buf = b""
-                        wav_started = True
-                        if audio:
-                            got_audio = True
-                            await on_chunk(audio)
-                    else:
-                        got_audio = True
-                        await on_chunk(chunk)
-
-        return got_audio
-    except Exception as exc:
-        log.error("TTS stream error: %s", exc)
-        return False
+    log.error("TTS stream: all %d attempts exhausted (429)", len(_429_BACKOFFS) + 1)
+    return False
 
 
 async def tts_rest(text: str) -> bytes:
-    """Single-shot REST TTS — returns raw µ-law audio bytes."""
-    r = await http.post(SARVAM_TTS_REST_URL, json=_tts_payload(text), headers=_tts_headers())
-    if r.status_code >= 400:
-        raise RuntimeError(f"TTS REST {r.status_code}: {r.text[:200]}")
-    data = r.json()
-    b64  = (data.get("audios") or [None])[0] or data.get("audio")
-    if not b64:
-        raise RuntimeError("TTS REST: no audio in response")
-    return base64.b64decode(b64)
+    """Single-shot REST TTS — returns raw µ-law audio bytes.
+    Acquires global semaphore; retries up to 3× on 429 with backoff."""
+    sem = _sem()
+    for attempt in range(len(_429_BACKOFFS) + 1):
+        async with sem:
+            r = await http.post(SARVAM_TTS_REST_URL, json=_tts_payload(text), headers=_tts_headers())
+            if r.status_code == 429:
+                log.warning(
+                    "TTS REST 429 (attempt %d/%d): %s",
+                    attempt + 1, len(_429_BACKOFFS) + 1, r.text[:100],
+                )
+                # fall through to backoff below
+            elif r.status_code >= 400:
+                raise RuntimeError(f"TTS REST {r.status_code}: {r.text[:200]}")
+            else:
+                data = r.json()
+                b64  = (data.get("audios") or [None])[0] or data.get("audio")
+                if not b64:
+                    raise RuntimeError("TTS REST: no audio in response")
+                return base64.b64decode(b64)
+
+        # 429 backoff — outside semaphore
+        if attempt < len(_429_BACKOFFS):
+            await asyncio.sleep(_429_BACKOFFS[attempt])
+
+    raise RuntimeError(f"TTS REST: all {len(_429_BACKOFFS) + 1} attempts exhausted (429)")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

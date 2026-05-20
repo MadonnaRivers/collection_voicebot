@@ -154,9 +154,11 @@ CANNOT_PAY — customer refuses entirely / says they cannot pay:
           end_call=false, call_phase="cannot_pay".
 
   Step 3 (callback date received):
-          ▸ Customer gives a date → store context_patch.callback_iso (YYYY-MM-DD). Apply 90-day rule.
-          ▸ Customer gives NO date OR says vague ("baad mein", "pata nahi", "later", "kuch din mein", "theek hai")
-            → auto-set callback_iso = CURRENT_DATE_ISO + 7 days. Store it. Do NOT ask again.
+          ▸ Customer gives a clear date → store context_patch.callback_iso (YYYY-MM-DD). Apply 90-day rule.
+          ▸ ANY OTHER response — vague, unclear, one-word, non-date, or no response at all
+            (e.g. "baad mein", "pata nahi", "later", "theek hai", "aap", "हाँ", "ठीक है", "आप", single words, anything not a date)
+            → auto-set callback_iso = CURRENT_DATE_ISO + 7 days. Store it immediately. Do NOT ask again.
+            ⚠ NEVER trigger no_response or silence close here — always default to +7 days and close.
           ⚠ callback_iso must be ≤ LAST_VALID_ISO.
           → MANDATORY CLOSING immediately. Use callback_iso as TARGET_DATE.
           call_phase="cannot_pay", end_call=true, hangup_reason="cannot_pay_callback".
