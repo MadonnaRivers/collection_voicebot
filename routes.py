@@ -148,11 +148,24 @@ async def make_call(
     if body.get("emi_overdue_date"):
         ctx["emi_due_date"] = ctx["emi_overdue_date"]
 
+    import time as _time
+    _now = _time.time()
+
+    # TTL cleanup: drop entries older than 5 minutes — these are unanswered/failed
+    # calls whose /outgoing-call webhook never fired, so they'll never be consumed.
+    stale = [k for k, v in list(pending_ctx.items())
+             if _now - float(v.get("_inserted_at", _now)) > 300]
+    for k in stale:
+        pending_ctx.pop(k, None)
+        log.debug("pending_ctx TTL eviction (5 min stale): %s", k)
+
+    ctx["_inserted_at"] = str(_now)   # timestamp for future TTL checks
     call_sid = await carrier.make_call(to, f"{NGROK_URL}/outgoing-call")
     pending_ctx[call_sid] = ctx
-    # Evict oldest entries if pending_ctx grows too large (e.g. unanswered calls
-    # that never hit /outgoing-call and never get consumed by call_handler).
-    if len(pending_ctx) > 200:
+
+    # Hard-cap at 1000 (handles 100+ concurrent batches with headroom).
+    # Only reached if TTL cleanup above wasn't enough — evict the absolute oldest.
+    if len(pending_ctx) > 1000:
         oldest = next(iter(pending_ctx))
         pending_ctx.pop(oldest, None)
         log.warning("pending_ctx overflow — evicted oldest key %s", oldest)

@@ -150,11 +150,11 @@ async def media_stream(ws: WebSocket) -> None:
         _stt_connected      = [True]  # False while STT is reconnecting — skip frames
 
         async def push(chunk: bytes) -> None:
-            if sess.done or abort[0] or not sess.stream_sid:
+            if sess.done or abort[0] or sess._hangup_started or not sess.stream_sid:
                 return
             try:
                 for offset in range(0, len(chunk), 160):
-                    if sess.done or abort[0]:
+                    if sess.done or abort[0] or sess._hangup_started:
                         return
                     frame = chunk[offset:offset + 160]
                     if not frame:
@@ -168,7 +168,13 @@ async def media_stream(ws: WebSocket) -> None:
                     _audio_drain_time[0] = _utt_push_start[0] + _utt_bytes_pushed[0] / 8000.0
                     await asyncio.sleep(0)
             except Exception as exc:
-                log.error("push error after %d frames: %s", _push_frame_count[0], exc)
+                # Carrier WebSocket closed while we were mid-send — this is expected
+                # whenever a call ends while TTS is playing. Set abort so no further
+                # frames are attempted and log at debug only.
+                abort[0] = True
+                if not sess.done and not sess._hangup_started:
+                    log.debug("push interrupted after %d frames (carrier gone): %s",
+                              _push_frame_count[0], exc)
 
         async def send_mark() -> None:
             if sess.done or not sess.stream_sid:
@@ -221,10 +227,10 @@ async def media_stream(ws: WebSocket) -> None:
         # ── TTS ───────────────────────────────────────────────────────────────
         async def play_tts(text: str) -> None:
             text = text.strip()
-            if not text or sess.done or not sess.stream_sid:
+            if not text or sess.done or sess._hangup_started or not sess.stream_sid:
                 return
             t0 = time.perf_counter()
-            abort[0] = False
+            abort[0] = False   # safe: _hangup_started was False above
             sess.barge_in_active = False
             sess.tts_started_at   = time.monotonic()
             _utt_push_start[0]   = time.monotonic()  # track when this utterance push begins
