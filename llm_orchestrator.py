@@ -127,7 +127,10 @@ CANNOT_PAY — customer refuses entirely:
 ALREADY_PAID — customer says paid previously:
   Ask: what date? what method (UPI/NEFT/cash)?
   Store: context_patch.already_paid_date, context_patch.payment_mode.
-  end_call=true. hangup_reason="already_paid_noted". No mandatory closing.
+  Once BOTH date AND method are captured → end_call=true, hangup_reason="already_paid_noted", call_phase="already_paid".
+  → say EXACTLY: "धन्यवाद [NAME] जी। हमने आपकी भुगतान जानकारी प्राप्त कर ली है। हम इसे सत्यापित करके अपने रिकॉर्ड अपडेट कर देंगे। आपका दिन शुभ हो।"
+    Replace [NAME] with customer name.
+  ⚠ DO NOT say "सुरक्षित लिंक", "क्रेडिट स्कोर", or any payment reminder — customer has already paid.
 
 DECEASED — someone says account holder has died:
   → call_phase="deceased", end_call=true, hangup_reason="deceased". No mandatory closing.

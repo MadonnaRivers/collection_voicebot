@@ -231,7 +231,6 @@ async def media_stream(ws: WebSocket) -> None:
                 log.info("[USER] %s", text)
                 sess.last_queued  = text
                 sess.last_interim = ""
-                record("user", text=text)
                 await utt_q.put(text)
 
         # ── TTS ───────────────────────────────────────────────────────────────
@@ -467,7 +466,6 @@ async def media_stream(ws: WebSocket) -> None:
                                 log.info("[USER END_SPEECH] %s", pending)
                                 sess.last_queued  = pending
                                 sess.last_interim = ""
-                                record("user", text=pending)
                                 await utt_q.put(pending)
                         continue
 
@@ -781,7 +779,7 @@ async def media_stream(ws: WebSocket) -> None:
                         break
 
                 utterance = utterance.strip() or "[silence]"
-                record("user_turn", text=utterance)
+                record("user", text=utterance)
                 _turn_count += 1
                 if await _stream_apply_turn(utterance, utterance):
                     break
