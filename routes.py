@@ -454,6 +454,8 @@ _OUTCOME_STYLE: dict[str, tuple[str, str, str]] = {
     "silence_timeout":        ("No Response",    "#f1f5f9", "#64748b"),
     "orchestrator_failure":   ("Error",          "#fee2e2", "#b91c1c"),
     "carrier_disconnect":     ("Disconnected",   "#f1f5f9", "#64748b"),
+    "no_answer":              ("Didn't Pick Up", "#fef9c3", "#854d0e"),
+    "disconnected_mid_call":  ("Dropped Midcall","#fee2e2", "#b91c1c"),
 }
 
 def _outcome_badge(raw: str, size: str = "sm") -> str:
@@ -489,6 +491,7 @@ def _parse_transcript(path: "Path") -> dict:  # type: ignore[name-defined]
         "call_sid": "", "phone": "", "customer": "", "loan_id": "", "emi": "",
         "emi_date": "", "hangup_reason": "", "state": "", "summary": "",
         "recording_url": "", "duration": "", "events": [],
+        "has_user_speech": False,   # True once customer spoke at least one turn
     }
     try:
         for ln in path.read_text(encoding="utf-8").strip().splitlines():
@@ -505,6 +508,9 @@ def _parse_transcript(path: "Path") -> dict:  # type: ignore[name-defined]
                 out["loan_id"]   = row.get("loan_id", "")  or out["loan_id"]
                 out["emi"]       = row.get("emi", "")      or out["emi"]
                 out["emi_date"]  = row.get("emi_date", "") or out["emi_date"]
+            elif evt in ("user", "user_turn"):
+                if (row.get("text") or "").strip():
+                    out["has_user_speech"] = True
             elif evt == "hangup":
                 out["hangup_reason"] = row.get("reason", "") or out["hangup_reason"]
                 out["state"]         = row.get("state", "")  or out["state"]
@@ -519,6 +525,16 @@ def _parse_transcript(path: "Path") -> dict:  # type: ignore[name-defined]
     except OSError:
         pass
     return out
+
+
+def _resolve_outcome(meta: dict) -> str:
+    """Map raw hangup_reason + call context to a display outcome key."""
+    reason = (meta.get("hangup_reason") or "").lower().strip()
+    if reason == "carrier_disconnect":
+        if not meta.get("has_user_speech"):
+            return "no_answer"
+        return "disconnected_mid_call"
+    return reason or (meta.get("state") or "").lower().strip() or "unknown"
 
 _TRANSCRIPT_CSS = """\
 *{box-sizing:border-box;margin:0;padding:0}
@@ -542,7 +558,7 @@ async def transcripts_list() -> HTMLResponse:
     for f in files:
         meta = _parse_transcript(f)
         dt_str   = _fmt_ts_from_filename(f.stem)
-        outcome  = meta["state"] or meta["hangup_reason"]
+        outcome  = _resolve_outcome(meta)
         badge    = _outcome_badge(outcome)
         customer = meta["customer"] or "—"
         phone    = meta["phone"]    or "—"
@@ -665,7 +681,7 @@ async def transcript_detail(filename: str) -> HTMLResponse:
     meta = _parse_transcript(path)
     events   = meta["events"]
     dt_str   = _fmt_ts_from_filename(path.stem)
-    outcome  = meta["state"] or meta["hangup_reason"]
+    outcome  = _resolve_outcome(meta)
     badge_lg = _outcome_badge(outcome, size="lg")
 
     # ── Build chat bubbles ─────────────────────────────────────────────────────
