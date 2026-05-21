@@ -22,9 +22,13 @@ def _backfill_from_ctx(result: dict, hangup_reason: str, ctx: dict[str, str]) ->
         if ctx.get(key) and not result.get("target_date"):
             result["target_date"] = ctx[key]
             break
-    # partial_amount
-    if ctx.get("partial_amount") and not result.get("partial_amount"):
-        result["partial_amount"] = ctx["partial_amount"]
+    # partial_amount — only valid when the call actually ended in partial_confirmed.
+    # Otherwise strip it out (the LLM sometimes hallucinates 1500 from the bot's offer text).
+    if hangup_reason == "partial_confirmed":
+        if ctx.get("partial_amount") and not result.get("partial_amount"):
+            result["partial_amount"] = ctx["partial_amount"]
+    else:
+        result.pop("partial_amount", None)
     # already_paid fields
     if ctx.get("already_paid_date") and not result.get("already_paid_date"):
         result["already_paid_date"] = ctx["already_paid_date"]
@@ -73,7 +77,7 @@ async def finalize_call_variables(
             "    cannot_pay → callback/follow-up date (context: callback_iso)\n"
             "    deceased → team follow-up date (context: callback_iso or target_date)\n"
             "    Use context target_date or callback_iso if set.\n"
-            "- partial_amount: rupees string (e.g. \"3000\") — ONLY for partial payment flow. OMIT for payment_confirm/ptp/cannot_pay/already_paid/callback.\n"
+            "- partial_amount: rupees string — ONLY include if hangup_reason=='partial_confirmed' AND context.partial_amount has a real customer-stated number. NEVER infer from bot's offer text (e.g. 'minimum ₹1500' is the bot's offer, not the customer's amount). OMIT for payment_today_confirmed/ptp_confirmed/cannot_pay_acknowledged/already_paid_noted/no_response.\n"
             "- cannot_pay_reason: 5-15 word English — why they cannot pay\n"
             "- already_paid_date: YYYY-MM-DD — date they claim to have already paid\n"
             "- already_paid_mode: UPI / NEFT / cash / branch / etc.\n"

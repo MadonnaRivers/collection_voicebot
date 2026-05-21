@@ -52,37 +52,38 @@ def build_default_ctx() -> dict[str, str]:
 # Instant opening greeting — no LLM needed, fires in milliseconds
 # ─────────────────────────────────────────────────────────────────────────────
 _OPENING_TEMPLATE = (
-    "नमस्ते {customer_name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
-    "आपकी होम लोन की EMI {emi_amount} रुपये {emi_due_date} को बकाया है। "
-    "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+    "नमस्ते {customer_name}, मैं अदिति बोल रही हूँ Easy Home Finance से। "
+    "आपकी home loan EMI {emi_amount} रुपये pending है, due date {emi_due_date} थी। "
+    "बताइए, कब तक payment कर पाएंगे?"
 )
 
 
 def build_opening_greeting(ctx: dict[str, str]) -> str:
     """
     Build the opening greeting directly from context — zero LLM latency.
-    Falls back gracefully if any key is missing.
+    Falls back gracefully if any key is missing. Modern Hindi.
     """
-    name    = ctx.get("customer_name") or ctx.get("name") or "जी"
+    name    = ctx.get("customer_name") or ctx.get("name") or ""
     amount  = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
     due     = ctx.get("emi_due_date") or ctx.get("emi_overdue_date") or ""
 
+    greeting = f"नमस्ते {name}, " if name else "नमस्ते, "
+
     if amount and due:
         return (
-            f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
-            f"आपकी होम लोन की EMI {amount} रुपये {due} को बकाया है। "
-            "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+            f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
+            f"आपकी home loan EMI {amount} रुपये pending है, due date {due} थी। "
+            "बताइए, कब तक payment कर पाएंगे?"
         )
     if amount:
         return (
-            f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
-            f"आपकी होम लोन की EMI {amount} रुपये अभी बकाया है। "
-            "कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+            f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
+            f"आपकी home loan EMI {amount} रुपये pending है। "
+            "बताइए, कब तक payment कर पाएंगे?"
         )
-    # Minimal fallback if both amount and date are missing
     return (
-        f"नमस्ते {name} जी, मैं अदिति बोल रही हूँ ईज़ी होम फाइनेंस से। "
-        "आपकी EMI अभी बकाया है। कृपया बताएं, आप कब तक भुगतान कर पाएंगे?"
+        f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
+        "आपकी EMI pending है। बताइए, कब तक payment कर पाएंगे?"
     )
 
 

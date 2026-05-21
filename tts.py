@@ -205,6 +205,37 @@ async def tts_rest(text: str) -> bytes:
 # ─────────────────────────────────────────────────────────────────────────────
 _SENTENCE_SPLIT = re.compile(r'(?<=[।.!?])\s+')
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Inter-sentence silence trimming
+# Sarvam pads each sentence's audio with ~1-2s trailing silence + leading silence.
+# This makes natural sentence breaks feel like 2-3s gaps. We trim aggressively
+# to keep breaks at ~150ms while still sounding natural.
+# µ-law silence bytes: 0xFF (G.711 standard "zero") and 0x7F.
+# 8 kHz sample rate → 8 samples per ms → keep ~150ms = 1200 trailing bytes max.
+# ─────────────────────────────────────────────────────────────────────────────
+_MULAW_SILENCE = (0xFF, 0x7F, 0x00)
+_KEEP_TRAILING_SILENCE_BYTES = 1200   # ~150ms at 8kHz µ-law
+
+
+def _trim_sentence_silence(audio: bytes) -> bytes:
+    """Trim leading + most-of-trailing silence from µ-law sentence audio."""
+    if not audio:
+        return audio
+    n = len(audio)
+
+    # Trim leading silence (samples are 0xFF/0x7F/0x00)
+    start = 0
+    while start < n and audio[start] in _MULAW_SILENCE:
+        start += 1
+
+    # Trim most of trailing silence, keep ~150ms for natural feel
+    end = n
+    while end > start and audio[end - 1] in _MULAW_SILENCE:
+        end -= 1
+    end = min(n, end + _KEEP_TRAILING_SILENCE_BYTES)
+
+    return audio[start:end]
+
 
 def _split_sentences(text: str) -> list[str]:
     """Split text at sentence boundaries (Devanagari danda + Latin punctuation)."""
@@ -263,9 +294,11 @@ async def tts_stream_pipelined(
             if ok:
                 got_audio = True
         else:
-            # Use pre-fetched audio for sentence i
+            # Use pre-fetched audio for sentence i — trim padding silence
+            # so inter-sentence break feels natural (~150ms), not 2-3 seconds.
             audio = await prefetch_task if prefetch_task else None
             if audio:
+                audio = _trim_sentence_silence(audio)
                 got_audio = True
                 await on_chunk(audio)
             elif not abort[0]:

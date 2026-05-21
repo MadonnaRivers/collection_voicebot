@@ -748,22 +748,34 @@ async def media_stream(ws: WebSocket) -> None:
                         SILENCE_TIMEOUT_SEC, _silence_count, _total_silence_count,
                     )
 
-                    # Hard ceiling: 4 total silence events across the whole call
-                    # catches cases where noise resets _silence_count before it hits 2
-                    if _total_silence_count >= 4 or _silence_count >= 2:
+                    # Hard ceiling: 5 total silence events across the whole call
+                    # catches cases where noise resets _silence_count before it hits 3
+                    if _total_silence_count >= 5 or _silence_count >= 3:
                         log.info("LLM: silence ceiling hit — ending call")
                         await _stream_apply_turn(
-                            "[SILENCE_2: No response again. Say the no-response goodbye "
-                            "and set end_call=true, hangup_reason=no_response.]",
+                            "[SILENCE_3: No response after 3 silence prompts. "
+                            "Say the no-response callback goodbye and set "
+                            "end_call=true, hangup_reason=no_response.]",
                             "[मौन — कोई उत्तर नहीं]",
                         )
                         if not sess.done:
                             await hangup("silence_timeout")
                         break
 
-                    # First silence — ask once more
+                    # First silence — gentle "are you there?"
+                    if _silence_count == 1:
+                        if await _stream_apply_turn(
+                            "[SILENCE_1: No response. Briefly ask if they are there / "
+                            "couldn't hear, please repeat. end_call=false.]",
+                            "[मौन — कोई उत्तर नहीं]",
+                        ):
+                            break
+                        continue
+
+                    # Second silence — ask once more
                     if await _stream_apply_turn(
-                        "[SILENCE_1: No response. Ask once more, very briefly.]",
+                        "[SILENCE_2: Still no response. Ask once more, "
+                        "very briefly, if they can hear. end_call=false.]",
                         "[मौन — कोई उत्तर नहीं]",
                     ):
                         break
@@ -772,13 +784,27 @@ async def media_stream(ws: WebSocket) -> None:
                 if sess.done:
                     break
 
-                while not utt_q.empty():
+                # ── Merge consecutive utterance fragments ────────────────────
+                # STT often splits a single sentence into 2-3 fragments arriving
+                # within ~1-1.5 sec of each other. Without merging, the bot
+                # responds to the first fragment ("मैं इसका पेमेंट तो") before
+                # the rest arrives ("कल कर दूँगा"), producing wrong intent.
+                # After dequeuing, wait up to 1.2 sec for additional fragments
+                # and concatenate them into a single utterance.
+                fragments = [utterance]
+                MERGE_WINDOW_SEC = 1.2
+                while True:
                     try:
-                        utterance = utt_q.get_nowait()
-                    except asyncio.QueueEmpty:
+                        nxt = await asyncio.wait_for(utt_q.get(), timeout=MERGE_WINDOW_SEC)
+                    except asyncio.TimeoutError:
                         break
+                    if nxt:
+                        fragments.append(nxt)
+                utterance = " ".join(f.strip() for f in fragments if f and f.strip())
 
                 utterance = utterance.strip() or "[silence]"
+                if len(fragments) > 1:
+                    log.info("[USER MERGED] %d fragments → %s", len(fragments), utterance)
                 record("user", text=utterance)
                 _turn_count += 1
                 if await _stream_apply_turn(utterance, utterance):
