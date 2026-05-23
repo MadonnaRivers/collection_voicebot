@@ -29,7 +29,8 @@ _log_buffer.attach()
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    from config import RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL
+    from config import RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL, LOG_FILE, LOG_ERROR_FILE
+    log.info("Logging active: info_log=%s error_log=%s", LOG_FILE, LOG_ERROR_FILE)
     if not RECORDING_CALLBACK_URL:
         log.warning(
             "RECORDING_CALLBACK_URL is not set — Plivo recording callback disabled. "
@@ -65,18 +66,21 @@ async def health() -> JSONResponse:
 async def debug() -> JSONResponse:
     """Diagnose config + connectivity — call this when something breaks."""
     import websockets as _ws
+    import httpx as _httpx
+    import asyncio as _asyncio
+    import time as _time
     from config import (
         NGROK_URL, SARVAM_STT_WS_URL, SARVAM_API_KEY,
-        LLM_MODEL, SARVAM_VOICE, PORT,
+        SARVAM_TTS_STREAM_URL, SARVAM_VOICE,
+        LLM_MODEL, PORT,
         PLIVO_AUTH_ID, PLIVO_PHONE_NUMBER,
         RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL,
     )
 
-    # Check Sarvam STT reachability
-    stt_ok = False
-    stt_err = ""
+    # ── 1. Sarvam STT WebSocket — open + close ─────────────────────────────
+    stt_ok, stt_err, stt_ms = False, "", 0
     try:
-        import asyncio as _asyncio
+        t0 = _time.time()
         conn = await _asyncio.wait_for(
             _ws.connect(
                 SARVAM_STT_WS_URL,
@@ -85,28 +89,100 @@ async def debug() -> JSONResponse:
             timeout=5.0,
         )
         await conn.close()
+        stt_ms = int((_time.time() - t0) * 1000)
         stt_ok = True
     except Exception as exc:
-        stt_err = str(exc)
+        stt_err = f"{type(exc).__name__}: {exc}"
+
+    # ── 2. Sarvam TTS REST — small synthesis test ──────────────────────────
+    tts_ok, tts_err, tts_ms, tts_bytes = False, "", 0, 0
+    try:
+        t0 = _time.time()
+        async with _httpx.AsyncClient(timeout=8.0) as client:
+            r = await client.post(
+                SARVAM_TTS_STREAM_URL,
+                headers={"API-Subscription-Key": SARVAM_API_KEY},
+                json={
+                    "text": "टेस्ट",
+                    "target_language_code": "hi-IN",
+                    "speaker": SARVAM_VOICE,
+                    "model": "bulbul:v2",
+                },
+            )
+        tts_ms = int((_time.time() - t0) * 1000)
+        tts_bytes = len(r.content)
+        if r.status_code == 200 and tts_bytes > 100:
+            tts_ok = True
+        else:
+            tts_err = f"HTTP {r.status_code} ({tts_bytes} bytes): {r.text[:200]}"
+    except Exception as exc:
+        tts_err = f"{type(exc).__name__}: {exc}"
+
+    # ── 3. Outbound DNS / Internet check ───────────────────────────────────
+    net_ok, net_err = False, ""
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get("https://api.sarvam.ai")
+        net_ok = r.status_code < 500
+    except Exception as exc:
+        net_err = f"{type(exc).__name__}: {exc}"
+
+    # ── 4. OpenAI LLM reachability (lightweight) ───────────────────────────
+    llm_ok, llm_err = False, ""
+    try:
+        from clients import oai_llm
+        resp = await _asyncio.wait_for(
+            oai_llm.chat.completions.create(
+                model=LLM_MODEL,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=2,
+            ),
+            timeout=8.0,
+        )
+        llm_ok = bool(resp.choices)
+    except Exception as exc:
+        llm_err = f"{type(exc).__name__}: {exc}"
+
+    # ── Summary ────────────────────────────────────────────────────────────
+    all_ok = stt_ok and tts_ok and net_ok and llm_ok
 
     return JSONResponse({
+        "overall": "✅ all systems OK" if all_ok else "❌ one or more failures",
         "server": {
-            "ngrok_url":  NGROK_URL,
-            "ws_host":    _WS_HOST,
-            "port":       PORT,
+            "ngrok_url": NGROK_URL,
+            "ws_host":   _WS_HOST,
+            "port":      PORT,
         },
         "plivo": {
-            "auth_id":           PLIVO_AUTH_ID[:6] + "…",
-            "phone_number":      PLIVO_PHONE_NUMBER,
+            "auth_id":            PLIVO_AUTH_ID[:6] + "…",
+            "phone_number":       PLIVO_PHONE_NUMBER,
             "recording_callback": RECORDING_CALLBACK_URL or "(not set)",
         },
-        "sarvam_stt": {
-            "url": SARVAM_STT_WS_URL,
-            "reachable": stt_ok,
-            "error":     stt_err or None,
+        "outbound_internet": {
+            "ok":    net_ok,
+            "error": net_err or None,
+            "note":  "tests https://api.sarvam.ai HEAD",
         },
-        "llm":   LLM_MODEL,
-        "voice": SARVAM_VOICE,
+        "sarvam_stt": {
+            "url":         SARVAM_STT_WS_URL,
+            "reachable":   stt_ok,
+            "latency_ms":  stt_ms,
+            "error":       stt_err or None,
+            "api_key_set": bool(SARVAM_API_KEY),
+        },
+        "sarvam_tts": {
+            "url":         SARVAM_TTS_STREAM_URL,
+            "voice":       SARVAM_VOICE,
+            "reachable":   tts_ok,
+            "latency_ms":  tts_ms,
+            "bytes_received": tts_bytes,
+            "error":       tts_err or None,
+        },
+        "openai_llm": {
+            "model":     LLM_MODEL,
+            "reachable": llm_ok,
+            "error":     llm_err or None,
+        },
         "audio_transcript_webhook": AUDIO_TRANSCRIPT_WEBHOOK_URL or "(not set)",
     })
 
@@ -1019,6 +1095,7 @@ async def logs_page() -> HTMLResponse:
     .header h1{{font-size:18px;font-weight:700;color:#f1f5f9}}
     .badge{{background:#1e293b;color:#64748b;font-size:11px;padding:2px 10px;border-radius:20px}}
     .refresh{{margin-left:auto;font-size:12px;color:#818cf8;text-decoration:none;border:1px solid #312e81;padding:4px 12px;border-radius:6px}}
+    .clear-btn{{font-size:12px;color:#f87171;background:none;border:1px solid #7f1d1d;padding:4px 12px;border-radius:6px;cursor:pointer;margin-left:8px}}
     .log-box{{background:#0a0f1e;border:1px solid #1e293b;border-radius:8px;padding:12px;overflow-y:auto}}
     a{{color:#818cf8;text-decoration:none}}
   </style>
@@ -1028,6 +1105,7 @@ async def logs_page() -> HTMLResponse:
     <h1>🔍 Aditi — Logs</h1>
     <span class="badge">persisted · all lines</span>
     <a class="refresh" href="/logs">⟳ Refresh</a>
+    <button class="clear-btn" onclick="fetch('/clear-logs',{{method:'POST'}}).then(()=>location.reload())">🗑 Clear Logs</button>
   </div>
 
   <h2>Server State</h2>
@@ -1057,3 +1135,23 @@ async def logs_page() -> HTMLResponse:
 </body>
 </html>"""
     return HTMLResponse(html)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Clear log file
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/clear-logs")
+async def clear_logs() -> JSONResponse:
+    """Wipe the log file on disk. In-memory handlers are unaffected (they drain naturally)."""
+    from pathlib import Path as _Path
+    from config import LOG_FILE
+
+    log_path = _Path(LOG_FILE)
+    try:
+        if log_path.exists():
+            log_path.write_text("", encoding="utf-8")
+        log.info("Log file cleared via /clear-logs")
+        return JSONResponse({"status": "ok", "message": f"{LOG_FILE} cleared."})
+    except Exception as exc:
+        log.error("Failed to clear log file: %s", exc)
+        return JSONResponse({"status": "error", "message": str(exc)}, status_code=500)

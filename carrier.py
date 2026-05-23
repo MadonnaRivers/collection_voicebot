@@ -156,9 +156,13 @@ def parse_ws_frame(data: dict) -> tuple[str, dict]:
 
     if evt == "start":
         start = data.get("start", {})
+        mf = start.get("mediaFormat") or {}
         return "call_start", {
             "stream_sid": start.get("streamId", ""),
             "call_sid":   start.get("callId",   ""),
+            "content_type": str(mf.get("contentType") or ""),
+            "sample_rate":  int(mf.get("sampleRate") or 0) if str(mf.get("sampleRate") or "").isdigit() else 0,
+            "track":        str((start.get("tracks") or [""])[0] if isinstance(start.get("tracks"), list) else ""),
         }
 
     if evt == "media":

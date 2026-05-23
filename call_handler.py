@@ -165,6 +165,10 @@ async def media_stream(ws: WebSocket) -> None:
                     frame = chunk[offset:offset + 160]
                     if not frame:
                         return
+                    # Keep outbound audio strictly 20 ms @ 8kHz mu-law (160 bytes).
+                    # Short tail frames can cause audible crack/pop on some carriers.
+                    if len(frame) < 160:
+                        frame = frame + (b"\xff" * (160 - len(frame)))
                     await ws.send_json(
                         _carrier.media_msg(frame, sess.stream_sid)
                     )
@@ -345,6 +349,13 @@ async def media_stream(ws: WebSocket) -> None:
                         if sess.call_sid in pending_ctx:
                             sess.ctx = pending_ctx.pop(sess.call_sid)
                         log.info("Stream=%s Call=%s", sess.stream_sid, sess.call_sid)
+                        _ct = str(payload.get("content_type") or "")
+                        _sr = int(payload.get("sample_rate") or 0)
+                        if _sr and _sr != 8000:
+                            log.warning("Plivo media sample-rate mismatch: got=%s expected=8000", _sr)
+                        if _ct and "mulaw" not in _ct.lower():
+                            log.warning("Plivo media codec mismatch: got=%s expected=audio/x-mulaw", _ct)
+                        log.info("Media format: contentType=%s sampleRate=%s", _ct or "(unknown)", _sr or "(unknown)")
                         record(
                             "call_start",
                             phone=sess.ctx.get("phone_number", ""),
@@ -386,7 +397,7 @@ async def media_stream(ws: WebSocket) -> None:
                                 "audio": {
                                     "data":        _b64.b64encode(pcm16).decode(),
                                     "sample_rate": 8000,
-                                    "encoding":    "audio/wav",
+                                    "encoding":    "pcm_s16le",
                                 }
                             }))
                         except (ws_exc.ConnectionClosedOK, ws_exc.ConnectionClosed):

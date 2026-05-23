@@ -4,6 +4,7 @@ log_buffer.py — In-memory + file log buffer.
 Captures log records from all loggers and:
   • Keeps the last MAX_LINES in memory (fast access, lost on restart).
   • Appends every line to logs/aditi.log (persists across restarts).
+  • Appends ERROR/CRITICAL lines to logs/aditi_error.log.
 
 The /logs endpoint reads from the file so all logs survive server restarts.
 """
@@ -21,6 +22,7 @@ _lock   = threading.Lock()
 
 # Resolved at attach() time so we don't import config at module level
 _log_file_path: str = ""
+_err_file_path: str = ""
 _file_lock = threading.Lock()
 
 
@@ -43,6 +45,13 @@ class _MemHandler(logging.Handler):
                             fh.write(msg + "\n")
                     except OSError:
                         pass
+            if _err_file_path and record.levelno >= logging.ERROR:
+                with _file_lock:
+                    try:
+                        with open(_err_file_path, "a", encoding="utf-8") as fh:
+                            fh.write(msg + "\n")
+                    except OSError:
+                        pass
         except Exception:
             pass
 
@@ -58,12 +67,28 @@ _handler.setFormatter(
 
 def attach() -> None:
     """Attach the buffer handler to the root logger. Call once at startup."""
-    global _log_file_path
-    from config import LOG_FILE, LOGS_DIR
+    global _log_file_path, _err_file_path
+    from config import LOG_FILE, LOG_ERROR_FILE, LOGS_DIR
     Path(LOGS_DIR).mkdir(parents=True, exist_ok=True)
     _log_file_path = LOG_FILE
+    _err_file_path = LOG_ERROR_FILE
 
     root = logging.getLogger()
+    # Ensure INFO logs are captured even when app is launched via uvicorn entrypoint.
+    if root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+
+    # If root has no handlers (common in some server launches), attach a console handler.
+    if not root.handlers:
+        sh = logging.StreamHandler()
+        sh.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s — %(message)s",
+                datefmt="%H:%M:%S",
+            )
+        )
+        root.addHandler(sh)
+
     if not any(isinstance(h, _MemHandler) for h in root.handlers):
         root.addHandler(_handler)
 

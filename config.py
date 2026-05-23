@@ -45,6 +45,11 @@ SARVAM_STT_WS_URL = (
     f"&flush_signal=true"
 )
 
+# Optional fallback STT websocket URL (same query params format as primary).
+# Example:
+# SARVAM_STT_WS_URL_FALLBACK=wss://api.sarvam.ai/speech-to-text/ws?language-code=hi-IN&model=saaras:v2&mode=transcribe&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&flush_signal=true
+SARVAM_STT_WS_URL_FALLBACK = os.getenv("SARVAM_STT_WS_URL_FALLBACK", "").strip()
+
 # ── LLM ───────────────────────────────────────────────────────────────────────
 LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
@@ -62,6 +67,7 @@ TRANSCRIPTS_DIR   = os.getenv("TRANSCRIPTS_DIR",   "transcripts")
 RECORDINGS_DIR    = os.getenv("RECORDINGS_DIR",    "recordings")
 LOGS_DIR          = os.getenv("LOGS_DIR",          "logs")
 LOG_FILE          = os.getenv("LOG_FILE",          "logs/aditi.log")
+LOG_ERROR_FILE    = os.getenv("LOG_ERROR_FILE",    "logs/aditi_error.log")
 MAKE_CALL_API_KEY = os.getenv("MAKE_CALL_API_KEY",  "")
 
 # Post-call JSON (all CRM fields) — pushed to n8n /webhook/push_data
@@ -81,7 +87,7 @@ AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
 
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
-SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "6.0"))
+SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "3.8"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 # 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences
