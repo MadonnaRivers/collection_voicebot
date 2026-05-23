@@ -30,6 +30,31 @@ def parse_date(text: str) -> _date | None:
     t = text.lower().strip()
     today = _date.today()
 
+    # ── Numeric date formats (highest priority — least ambiguous) ────────────
+    # Handles values like "06/04/2026", "6-4-2026", "2026-04-06", "06/04/26".
+    # Hindi convention is DD/MM/YYYY, so we prefer that when ambiguous.
+    # ISO YYYY-MM-DD: 4-digit year first
+    m = re.match(r"^\s*(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\s*$", t)
+    if m:
+        try:
+            return _date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    # DD/MM/YYYY or DD-MM-YYYY (Indian convention — preferred over MM/DD/YYYY)
+    m = re.match(r"^\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\s*$", t)
+    if m:
+        d, mo, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if y < 100:                                  # "26" → 2026
+            y += 2000 if y < 70 else 1900
+        # If day > 12, it cannot be MM/DD/YYYY — must be DD/MM
+        # If month > 12, the input is malformed
+        if mo > 12 and d <= 12:                      # only-then swap (MM/DD/YYYY input)
+            d, mo = mo, d
+        try:
+            return _date(y, mo, d)
+        except ValueError:
+            return None
+
     # Devanagari → Roman so the regexes match both scripts
     t = (t.replace("आज", "aaj")
           .replace("कल", "kal")

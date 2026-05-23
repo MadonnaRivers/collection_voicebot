@@ -87,7 +87,7 @@ AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
 
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
-SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "3.8"))
+SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "5.5"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 # 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences

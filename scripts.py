@@ -19,9 +19,6 @@ DEFAULT_CUSTOMER: dict[str, str] = {
     "emi_overdue_date": os.getenv("DEFAULT_EMI_OVERDUE_DATE", ""),
     "min_partial":      os.getenv("DEFAULT_MIN_PARTIAL",      "1,500"),   # formatted e.g. "1,500"
     "payment_deadline": os.getenv("DEFAULT_PAYMENT_DEADLINE", ""),
-
-    # LLM session flags — set by orchestrator during the call, not by caller
-    "partial_offer_made": "",
 }
 
 
@@ -51,39 +48,30 @@ def build_default_ctx() -> dict[str, str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # Instant opening greeting — no LLM needed, fires in milliseconds
 # ─────────────────────────────────────────────────────────────────────────────
-_OPENING_TEMPLATE = (
-    "नमस्ते {customer_name}, मैं अदिति बोल रही हूँ Easy Home Finance से। "
-    "आपकी home loan EMI {emi_amount} रुपये pending है, due date {emi_due_date} थी। "
-    "बताइए, कब तक payment कर पाएंगे?"
-)
-
-
 def build_opening_greeting(ctx: dict[str, str]) -> str:
     """
     Build the opening greeting directly from context — zero LLM latency.
-    Falls back gracefully if any key is missing. Modern Hindi.
+    Wording is kept word-for-word in sync with the OPENING block in
+    llm_orchestrator._FLOW_SPEC so the customer hears the same line whether
+    the opener is scripted or re-spoken later by the LLM (e.g. on confusion).
+
+    Note: the EMI due/overdue date is intentionally NOT spoken in the opening
+    — it makes the line shorter and the customer can ask via FAQ if needed.
     """
-    name    = ctx.get("customer_name") or ctx.get("name") or ""
-    amount  = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
-    due     = ctx.get("emi_due_date") or ctx.get("emi_overdue_date") or ""
+    name   = ctx.get("customer_name") or ctx.get("name") or ""
+    amount = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
 
-    greeting = f"नमस्ते {name}, " if name else "नमस्ते, "
+    greeting = f"नमस्ते {name} जी, " if name else "नमस्ते जी, "
 
-    if amount and due:
-        return (
-            f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
-            f"आपकी home loan EMI {amount} रुपये pending है, due date {due} थी। "
-            "बताइए, कब तक payment कर पाएंगे?"
-        )
     if amount:
         return (
             f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
             f"आपकी home loan EMI {amount} रुपये pending है। "
-            "बताइए, कब तक payment कर पाएंगे?"
+            "आप कब तक payment कर पाएंगे?"
         )
     return (
         f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
-        "आपकी EMI pending है। बताइए, कब तक payment कर पाएंगे?"
+        "आपकी EMI pending है। आप कब तक payment कर पाएंगे?"
     )
 
 
@@ -254,8 +242,12 @@ TERMINAL: set[str] = {
     "callback_confirm", "unclear_close", "beyond_90_penalty_close",
 }
 
-# States where barge-in is suppressed (opening must play in full)
-BARGE_IN_LOCKED: set[str] = TERMINAL | {"opening"}
+# States where barge-in is suppressed.
+# NOTE: "opening" is intentionally NOT in this set — if the customer starts
+# replying before the long opening line finishes, we want to capture their
+# response instead of swallowing it. Only terminal closings stay barge-locked
+# so the goodbye line plays to completion before hangup.
+BARGE_IN_LOCKED: set[str] = set(TERMINAL)
 
 # States that auto-advance to "opening" after speaking (no user input needed)
 AUTO_ADVANCE: dict[str, str] = {

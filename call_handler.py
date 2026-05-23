@@ -393,11 +393,17 @@ async def media_stream(ws: WebSocket) -> None:
                                     pcm16 = b"\x00" * 320
                             if not _stt_connected[0]:
                                 continue  # STT is reconnecting — skip frame
+                            # NOTE: input_audio_codec=pcm_s16le is set in the URL
+                            # query string at connect time. The per-frame
+                            # `encoding` field is validated against a strict
+                            # Sarvam enum that only accepts "audio/wav" — sending
+                            # "pcm_s16le" here triggers a Pydantic validation
+                            # error and the server closes the socket.
                             await stt_ws.send(json.dumps({
                                 "audio": {
                                     "data":        _b64.b64encode(pcm16).decode(),
                                     "sample_rate": 8000,
-                                    "encoding":    "pcm_s16le",
+                                    "encoding":    "audio/wav",
                                 }
                             }))
                         except (ws_exc.ConnectionClosedOK, ws_exc.ConnectionClosed):
