@@ -91,7 +91,7 @@ def t_anchor_block() -> None:
     check("date block mentions out_of_window_attempts counter",
           "out_of_window_attempts" in block)
     check("date block contains FIRST-rejection wording (generic, no cap)",
-          "कोई और date बताइए" in block)
+          ("कोई और date दीजिए" in block) or ("कोई और date बताइए" in block))
 
 
 def t_window_safety_net() -> None:

@@ -100,6 +100,15 @@ _CORE_POLICY = """\
 - Date calculation हमेशा CURRENT_DATE_ISO से:
   "कल" = +1 day, "परसो" = +2 days, "अगले हफ्ते" = +7 days, "अगले महीने" = +30 days।
   ⚠ "कल" का मतलब TOMORROW है — exactly ONE day, कभी 7 days नहीं।
+- ⚠ BARE DAY NUMBER ("X तक" / "X तारीख" / "X तारीख तक" / "Xth"):
+  X को current month का दिन मानो। फिर:
+    • अगर X > today.day → CURRENT_DATE_ISO के month में X तारीख।
+    • अगर X ≤ today.day → अगले month में X तारीख।
+  Examples (today = 2026-05-23):
+    "29 तक"            → 2026-05-29  (29 > 23 → इसी month)
+    "5 तारीख"          → 2026-06-05  (5 ≤ 23 → अगले month)
+    "15 तक"            → 2026-06-15  (15 ≤ 23 → अगले month)
+    "30 तक"            → 2026-05-30  (30 > 23 → इसी month)
 - context_patch में हर date YYYY-MM-DD format में।
 - context_patch में कोई internal/debug key (silence_count, retry_count, etc.) न डालें।
 
@@ -315,11 +324,31 @@ def _hard_date_block(ctx: dict[str, str]) -> str:
         f"  • customer's target_date >  {last_d.isoformat()}  → REJECT (2-step नीचे)।\n"
         "\n"
         "─── 2-STEP REJECTION (90-day cap कभी पहले turn में मत बताओ) ───\n"
+        "⚠ ⚠ ⚠ REJECTION TRIGGER — पहले यह GATE check करो ⚠ ⚠ ⚠\n"
+        "Rejection line तभी emit करनी है जब:\n"
+        "  (a) ग्राहक ने इस turn में एक नई date दी हो (parseable), AND\n"
+        f"  (b) वो parsed date > {last_d.isoformat()} (LAST_VALID_ISO) हो।\n"
+        "दोनों conditions true हों तभी नीचे का rejection rule लागू होगा।\n"
+        "\n"
+        "अगर ग्राहक ने इस turn में date नहीं दी (e.g. 'हेलो', 'haan', 'क्या?',\n"
+        "noise, confusion, silence event, FAQ, या कोई बेमतलब बात):\n"
+        "  → rejection line कभी मत बोलो — चाहे context.out_of_window_attempts कुछ भी हो।\n"
+        "  → out_of_window_attempts को छेड़ो मत (current value रखो)।\n"
+        "  → confusion → confusion handler use करो।\n"
+        "  → FAQ → FAQ handler use करो।\n"
+        "  → कुछ नहीं समझ आया → \"Sorry, मैं समझ नहीं पाई। थोड़ा फिर से बोलिए please?\"\n"
+        "\n"
+        "अगर ग्राहक ने इस turn में date दी और वो window के अंदर है (≤ LAST_VALID_ISO):\n"
+        "  → ACCEPT करो — context.out_of_window_attempts चाहे जो भी हो।\n"
+        "  → out_of_window_attempts को छेड़ो मत।\n"
+        "  → target_date store करो, closing पर जाओ।\n"
+        "\n"
+        "GATE pass हो (नई out-of-window date आई इस turn में) तभी नीचे का rule:\n"
         "Context में key देखें: out_of_window_attempts (string \"0\"/\"1\"/...)।\n"
         "अगर key missing है तो उसे \"0\" मानें।\n"
         "\n"
         "FIRST rejection (out_of_window_attempts == \"0\"):\n"
-        "  → कहें EXACTLY: \"यह date valid नहीं है। कोई और date बताइए कब तक payment कर पाएंगे?\"\n"
+        "  → कहें EXACTLY: \"यह date valid नहीं है। कोई और date दीजिए कब तक payment कर पाएंगे?\"\n"
         "  → context_patch.out_of_window_attempts = \"1\"।\n"
         "  → target_date store मत करें। end_call=false, call_phase वही रखें।\n"
         "  → ⚠ इस turn में 90-day cap date कभी मत बोलो।\n"
@@ -329,10 +358,6 @@ def _hard_date_block(ctx: dict[str, str]) -> str:
         "  → context_patch.out_of_window_attempts = \"2\"।\n"
         "  → target_date store मत करें। end_call=false, call_phase वही रखें।\n"
         f"  → इस rejection line में हमेशा literally \"{last_human}\" ही use करना है।\n"
-        "\n"
-        "ACCEPT होने पर (date window के अंदर):\n"
-        "  → out_of_window_attempts को context_patch में set / change मत करो।\n"
-        "  → target_date store करें और normal closing पर जाएँ।\n"
         "\n"
         "⚠ कभी भी कोई दूसरी fallback date मत बनाओ।\n"
         "⚠ एक call के अंदर अपना decision flip मत करो — अगर पिछले turn में target_date\n"
@@ -555,6 +580,91 @@ def _ctx_anchor_date(ctx: dict[str, str]) -> date:
     return parsed or date.today()
 
 
+def _maybe_rescue_in_window_date(
+    result: dict[str, Any],
+    user_message: str,
+    ctx: dict[str, str],
+) -> dict[str, Any]:
+    """
+    Inverse of _maybe_enforce_90day_window: if the LLM REJECTED a customer
+    utterance but utils.parse_date recovers a within-window date from that
+    utterance, override into an ACCEPT.
+
+    Triggers when:
+      • call_phase ∈ {"ptp", "partial"}, end_call is False
+      • LLM's say contains rejection wording ("valid नहीं" / "इतनी देर")
+      • The customer's message yields a parseable date that is in [today,
+        anchor + 90 days].
+
+    This catches the "29 तक" / bare day-number class of failures where the LLM
+    mis-computes the date and emits a 1st-strike rejection.
+    """
+    phase = result.get("call_phase")
+    if phase not in ("ptp", "partial"):
+        return result
+    if result.get("end_call"):
+        return result
+    say = result.get("say", "") or ""
+    rejected = ("valid नहीं" in say) or ("इतनी देर" in say)
+    if not rejected:
+        return result
+
+    parsed = _parse_ctx_date(user_message)
+    if parsed is None:
+        return result
+    today = date.today()
+    if parsed < today:
+        # parse_date already rolls past dates forward for some patterns; but
+        # any leftover past date can't be a valid PTP target.
+        return result
+    anchor = _ctx_anchor_date(ctx)
+    last_valid = anchor + timedelta(days=90)
+    if parsed > last_valid:
+        return result   # genuinely out-of-window — keep the rejection
+
+    # ── Within window: rescue ────────────────────────────────────────────────
+    log.warning(
+        "Rescuing wrongly-rejected in-window date — parsed=%s (anchor=%s, "
+        "last_valid=%s, phase=%s) from user msg %r. Forcing accept.",
+        parsed.isoformat(), anchor.isoformat(), last_valid.isoformat(),
+        phase, (user_message or "")[:80],
+    )
+    name = ctx.get("customer_name", "") or ""
+    name_prefix = f"{name} जी" if name else "जी"
+    target_human = parsed.strftime("%d %b %Y")
+    if phase == "partial":
+        closing = (
+            f"Thank you {name_prefix}। Payment के लिए SMS में भेजे गए link का use कीजिए। "
+            f"{target_human} तक payment पूरा कर दीजिए ताकि आपका credit score safe रहे। "
+            "आपका दिन शुभ हो।"
+        )
+        hangup = "partial_confirmed"
+    else:
+        closing = (
+            f"Thank you {name_prefix}। Payment के लिए SMS में भेजे गए link का use कीजिए। "
+            f"{target_human} तक payment कर दीजिए ताकि आपका credit score safe रहे। "
+            "आपका दिन शुभ हो।"
+        )
+        hangup = "ptp_confirmed"
+
+    # Keep existing patch keys EXCEPT bump-counter (un-do the counter increment
+    # the LLM may have just done) and clear out_of_window_attempts if present.
+    new_patch: dict[str, str] = {}
+    for k, v in (result.get("context_patch") or {}).items():
+        if k == "out_of_window_attempts":
+            continue
+        new_patch[str(k)] = str(v)
+    new_patch["target_date"] = parsed.isoformat()
+
+    return {
+        "say":           closing,
+        "context_patch": new_patch,
+        "end_call":      True,
+        "hangup_reason": hangup,
+        "call_phase":    phase,
+    }
+
+
 def _maybe_enforce_90day_window(
     result: dict[str, Any],
     ctx: dict[str, str],
@@ -728,6 +838,9 @@ async def run_conversation_turn(
         # Safety net: 90-day window enforcement (overrides LLM if it accepted
         # a PTP / partial target_date past LAST_VALID = anchor + 90 days).
         result = _maybe_enforce_90day_window(result, ctx)
+        # Safety net: rescue an in-window date the LLM mistakenly rejected
+        # (e.g. bare "29 तक" that the LLM computed wrong).
+        result = _maybe_rescue_in_window_date(result, user_message, ctx)
         return result
 
     last_exc: BaseException | None = None
@@ -840,14 +953,28 @@ async def stream_conversation_turn(
             stream=True,
         )
 
+        # Race-condition guard: if the streamed `say` looks like a date-window
+        # rejection, defer the on_say call until after the safety nets run.
+        # Otherwise TTS speaks the rejection before _maybe_rescue_in_window_date
+        # can override it with an accept.
+        def _looks_like_date_rejection(text: str) -> bool:
+            return ("valid नहीं" in text) or ("इतनी देर" in text)
+
         async for chunk in stream:
             delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
             accumulated += delta
             if not say_fired:
                 say = _extract_say_from_stream(accumulated)
                 if say:
-                    say_fired = True
-                    await on_say(say)
+                    if _looks_like_date_rejection(say):
+                        # Defer — wait for full JSON + safety nets
+                        log.debug(
+                            "Deferring streaming on_say for potential date "
+                            "rejection: %r", say[:80],
+                        )
+                    else:
+                        say_fired = True
+                        await on_say(say)
 
         if not accumulated.strip():
             fallback = _fallback_hindi()
@@ -866,6 +993,9 @@ async def stream_conversation_turn(
         # Safety net: 90-day window enforcement (overrides LLM if it accepted
         # a PTP / partial target_date past LAST_VALID = anchor + 90 days).
         result = _maybe_enforce_90day_window(result, ctx)
+        # Safety net: rescue an in-window date the LLM mistakenly rejected
+        # (e.g. bare "29 तक" that the LLM computed wrong).
+        result = _maybe_rescue_in_window_date(result, user_message, ctx)
 
         # Safety: fire on_say if regex never matched (unusual JSON ordering)
         if not say_fired:

@@ -90,10 +90,26 @@ def parse_date(text: str) -> _date | None:
         return today + timedelta(days=2)
     if re.search(r"agle\s+saal|next\s+year", t):
         return today + timedelta(days=366)
-    if re.search(r"agle\s+hafte|next\s+week", t):
-        return today + timedelta(days=7)
-    if re.search(r"agle\s+mahine|next\s+month|mahine\s+(?:mein|baad)", t):
-        return today + timedelta(days=30)
+
+    # ── Count-aware patterns MUST come BEFORE generic catch-alls below ───────
+    # so "6 mahine baad" doesn't get swallowed by the generic "mahine baad".
+    # Accept both Devanagari and Roman forms (Devanagari may survive any earlier
+    # replacement step that only covered "अगले साल"-type compounds).
+
+    # "X saal baad" / "X years later"
+    m = re.search(r"(\d+)\s*(?:साल|वर्ष|saal|saalon|years?|varsh)", t)
+    if m:
+        return today + timedelta(days=int(m.group(1)) * 365)
+
+    # "X mahine baad" / "X months later"
+    m = re.search(r"(\d+)\s*(?:महीने|महीनों|mahine|mahino|months?)", t)
+    if m:
+        return today + timedelta(days=int(m.group(1)) * 30)
+
+    # "X hafte baad" / "X weeks later"
+    m = re.search(r"(\d+)\s*(?:हफ़्ते|हफ्ते|हफ्तों|hafte|haftey|weeks?)", t)
+    if m:
+        return today + timedelta(days=int(m.group(1)) * 7)
 
     # "2-3 din" → take first
     m = re.search(r"(\d+)\s*[-–]\s*\d+\s*din", t)
@@ -104,6 +120,12 @@ def parse_date(text: str) -> _date | None:
     m = re.search(r"(\d+)\s*(?:din\b|days?\b)", t)
     if m:
         return today + timedelta(days=int(m.group(1)))
+
+    # ── Generic "next week / next month" catch-alls (no count) ───────────────
+    if re.search(r"agle\s+hafte|next\s+week", t):
+        return today + timedelta(days=7)
+    if re.search(r"agle\s+mahine|next\s+month|mahine\s+(?:mein|baad)", t):
+        return today + timedelta(days=30)
 
     # "15 March" / "March 15" (with optional year)
     for name, num in _MONTH_MAP.items():

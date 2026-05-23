@@ -758,6 +758,60 @@ async def media_stream(ws: WebSocket) -> None:
                 except asyncio.TimeoutError:
                     if sess.done:
                         break
+
+                    # ── Race-condition guard ────────────────────────────────
+                    # The user may have started speaking just as the silence
+                    # timer fired — STT can lag the audio by 300-800 ms.
+                    # Before committing to the silence prompt, give STT a small
+                    # grace window to deliver a transcript that's already in
+                    # flight. If anything arrives, treat THAT as the turn input
+                    # and skip the silence prompt entirely.
+                    _SILENCE_GRACE_SEC = 0.8
+                    try:
+                        utterance = await asyncio.wait_for(
+                            utt_q.get(), timeout=_SILENCE_GRACE_SEC,
+                        )
+                        log.info(
+                            "Silence aborted — late STT transcript arrived within "
+                            "%.1fs grace window: %r",
+                            _SILENCE_GRACE_SEC, (utterance or "")[:80],
+                        )
+                        _silence_count = 0
+                        # Fall through to the normal utterance-handling path below
+                        # by jumping out of the except block.
+                    except asyncio.TimeoutError:
+                        pass
+                    else:
+                        # We rescued a real utterance — skip silence handling
+                        # and let the merge-and-process path run.
+                        if sess.done:
+                            break
+                        # Merge fragments + process as if no timeout happened
+                        fragments = [utterance]
+                        MERGE_WINDOW_SEC = 1.2
+                        while True:
+                            try:
+                                nxt = await asyncio.wait_for(
+                                    utt_q.get(), timeout=MERGE_WINDOW_SEC,
+                                )
+                            except asyncio.TimeoutError:
+                                break
+                            if nxt:
+                                fragments.append(nxt)
+                        utterance = " ".join(
+                            f.strip() for f in fragments if f and f.strip()
+                        ) or "[silence]"
+                        if len(fragments) > 1:
+                            log.info(
+                                "[USER MERGED] %d fragments → %s",
+                                len(fragments), utterance,
+                            )
+                        record("user", text=utterance)
+                        _turn_count += 1
+                        if await _stream_apply_turn(utterance, utterance):
+                            break
+                        continue   # back to top of while loop
+
                     _silence_count       += 1
                     _total_silence_count += 1
                     log.info(
