@@ -19,8 +19,8 @@ _STATE_LABEL: dict[str, str] = {
     "partial":         "Partial Payment",
     "cannot_pay":      "Cannot Pay Reason",
     "already_paid":    "Already Paid",
-    "callback":        "User Busy / Callback Schedule",
     "deceased":        "Deceased Report",
+    "no_response":     "No Response",
 }
 
 
@@ -29,24 +29,48 @@ def humanize_state(state: str) -> str:
     return _STATE_LABEL.get(state.lower().strip(), state)
 
 
-# Canonical output fields pushed to n8n after every call.
-# classifier.finalize_call_variables() must use these exact key names.
+# Canonical classifier-output fields. Listed here for documentation only —
+# build_call_summary_push_body() flattens ALL classifier output into the body.
 CALL_SUMMARY_OUTPUT_KEYS: tuple[str, ...] = (
-    "state",             # final call phase: ptp | partial | cannot_pay | payment_confirm |
-                         #   already_paid | callback | deceased | no_response | error
+    "state",             # final call phase
     "summary",           # one-line English outcome (always present)
-    "target_date",       # YYYY-MM-DD  — universal follow-up date:
-                         #   ptp → promised payment date
-                         #   partial → remainder balance due date
-                         #   cannot_pay → callback date
-                         #   deceased → team follow-up date
-    "partial_amount",    # rupees (string) — partial payment committed today
+    "target_date",       # YYYY-MM-DD — universal follow-up date
+    "partial_amount",    # rupees (string) — partial committed today
     "cannot_pay_reason", # short English — why they cannot pay
     "doing_payment",     # true/false — customer confirmed paying full EMI today
-    "already_paid_date", # YYYY-MM-DD  — date they claim to have already paid
-    "already_paid_mode", # UPI / NEFT / cash / branch etc.
-    "callback_time",     # ISO or human phrase — when to call back (busy/callback flow)
+    "already_paid_date", # YYYY-MM-DD — date they claim to have already paid
+    "already_paid_mode", # UPI / NEFT / cash / branch / etc.
 )
+
+
+# Input-context keys that should always appear in the webhook body, even if
+# the underlying call did not touch them. Anything else present in ctx will
+# also be passed through verbatim (e.g. custom CRM fields).
+CALL_SUMMARY_INPUT_KEYS: tuple[str, ...] = (
+    "customer_name",
+    "phone_number",
+    "loan_id",
+    "emi_overdue_amt",
+    "emi_overdue_date",
+    "emi_amount",         # alias of emi_overdue_amt
+    "emi_due_date",       # alias of emi_overdue_date
+    "emi_amount_int",     # derived integer form (no commas)
+    "min_partial",
+    "min_partial_int",
+    "payment_deadline",
+)
+
+
+# Internal/transient bookkeeping keys that should NOT leak into the webhook
+# payload. Anything in this set is stripped on the way out.
+_INTERNAL_CTX_KEYS: frozenset[str] = frozenset({
+    "out_of_window_attempts",
+    "silence_count",
+    "error_count",
+    "retry_count",
+    "turn_count",
+    "partial_offer_made",   # legacy V1 flag, no longer used
+})
 
 
 def build_call_summary_push_body(
@@ -56,8 +80,28 @@ def build_call_summary_push_body(
     ctx: dict[str, str] | None = None,
     state: str = "",
 ) -> dict[str, Any]:
+    """
+    Build the JSON payload pushed to the n8n /push_data webhook.
+
+    Contains EVERY parameter known about the call:
+      • runtime fields  (call_sid, hangup_reason, state, ended_at, doing_payment)
+      • input ctx       (customer_name, phone_number, loan_id, EMI details, …
+                         and any custom CRM key the caller passed to /make-call)
+      • classifier out  (summary, target_date, partial_amount, cannot_pay_reason,
+                         already_paid_date, already_paid_mode, … plus any extras
+                         the classifier LLM added)
+
+    Resolution rules when the same key appears in both ctx and call_vars:
+      classifier value WINS  (it knows the actual outcome of the call).
+      Empty / missing classifier values fall back to ctx.
+
+    Internal bookkeeping keys (out_of_window_attempts, silence_count, etc.)
+    are stripped — they never reach n8n.
+    """
     cv = dict(call_vars or {})
     cx = dict(ctx or {})
+
+    # ── Runtime fields ──────────────────────────────────────────────────────
     body: dict[str, Any] = {
         "call_sid":      call_sid,
         "hangup_reason": hangup_reason,
@@ -66,37 +110,38 @@ def build_call_summary_push_body(
             .isoformat(timespec="milliseconds")
             .replace("+00:00", "Z")
         ),
-        # state — human-readable label for n8n
-        "state": humanize_state(state or cv.pop("state", "")),
-        # doing_payment is deterministic from hangup_reason — no LLM needed
+        "state":         humanize_state(state or cv.pop("state", "") or ""),
+        # Deterministic — doesn't need the LLM
         "doing_payment": hangup_reason == "payment_today_confirmed",
     }
-    for k in CALL_SUMMARY_OUTPUT_KEYS:
-        if k not in body:
-            body[k] = cv.get(k)
 
-    # Always include base customer/loan fields expected by downstream n8n flow.
-    # Prefer classifier output, then fall back to per-call ctx.
-    body["phone_number"] = cv.get("phone_number") or cx.get("phone_number", "")
-    body["customer_name"] = cv.get("customer_name") or cx.get("customer_name", "")
-    body["loan_id"] = cv.get("loan_id") or cx.get("loan_id", "")
-    body["emi_overdue_amt"] = (
-        cv.get("emi_overdue_amt")
-        or cx.get("emi_overdue_amt")
-        or cx.get("emi_amount", "")
-    )
-    body["emi_overdue_date"] = (
-        cv.get("emi_overdue_date")
-        or cx.get("emi_overdue_date")
-        or cx.get("emi_due_date", "")
-    )
-    body["min_partial"] = cv.get("min_partial") or cx.get("min_partial", "")
-    body["payment_deadline"] = cv.get("payment_deadline") or cx.get("payment_deadline", "")
-
-    # Pass through any extra fields the LLM classifier added
-    for k, v in cv.items():
+    # ── 1. Input ctx (everything the caller passed in for this call) ────────
+    # First the well-known keys (so they're always present, even if blank),
+    # then any other custom fields from ctx.
+    for k in CALL_SUMMARY_INPUT_KEYS:
+        if k in _INTERNAL_CTX_KEYS:
+            continue
+        body[k] = cx.get(k, "")
+    for k, v in cx.items():
+        if k in _INTERNAL_CTX_KEYS:
+            continue
         if k not in body:
             body[k] = v
+
+    # ── 2. Classifier output (overrides ctx where it provides a real value) ─
+    for k, v in cv.items():
+        if k in _INTERNAL_CTX_KEYS:
+            continue
+        if v in (None, "", [], {}):
+            # Don't overwrite a populated ctx value with an empty classifier value
+            body.setdefault(k, v)
+        else:
+            body[k] = v
+
+    # ── 3. Guarantee the canonical output keys exist (null if not produced) ─
+    for k in CALL_SUMMARY_OUTPUT_KEYS:
+        body.setdefault(k, None)
+
     return body
 
 
