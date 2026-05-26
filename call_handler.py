@@ -312,7 +312,7 @@ async def media_stream(ws: WebSocket) -> None:
                     record("call_summary", **call_vars)
             except Exception as exc:
                 log.warning("call vars error: %s", exc)
-            if CALL_SUMMARY_WEBHOOK_URL and sess.call_sid:
+            if sess.call_sid:
                 wh_body = build_call_summary_push_body(
                     sess.call_sid,
                     reason,
@@ -320,7 +320,26 @@ async def media_stream(ws: WebSocket) -> None:
                     ctx=sess.ctx,
                     state=sess.state,
                 )
-                await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
+                # Persist the summary to disk and DEFER the webhook push until
+                # the recording-ready callback fires (1-2 minutes later, after
+                # Plivo processes the MP3). The recording callback in routes.py
+                # loads this file, merges in the recording URL + metadata, and
+                # sends ONE consolidated push to n8n. No immediate push here.
+                try:
+                    from pathlib import Path as _Path
+                    from config import RECORDINGS_DIR
+                    import json as _json
+                    _Path(RECORDINGS_DIR).mkdir(parents=True, exist_ok=True)
+                    summary_path = f"{RECORDINGS_DIR}/{sess.call_sid}.summary.json"
+                    with open(summary_path, "w", encoding="utf-8") as fh:
+                        fh.write(_json.dumps(wh_body, ensure_ascii=False, indent=2))
+                    log.info(
+                        "Call summary persisted — waiting for recording "
+                        "callback to push consolidated webhook (call=%s)",
+                        sess.call_sid,
+                    )
+                except Exception as exc:
+                    log.warning("Could not persist call summary: %s", exc)
             await asyncio.sleep(HANGUP_GRACE_SEC)
             if sess.call_sid:
                 try:

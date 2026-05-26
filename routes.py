@@ -393,26 +393,53 @@ async def recording_callback(request: Request) -> JSONResponse:
     except OSError as exc:
         log.warning("Could not write recording metadata: %s", exc)
 
-    # ── 3. Push recording fields to push_data webhook ─────────────────────────
+    # ── 3. Push COMBINED (summary + recording) payload to push_data webhook ─
+    # We merge the call-summary body saved at hangup (recordings/<sid>.summary.json)
+    # with the recording-ready fields, so n8n gets ONE consolidated event
+    # containing every input ctx field + classifier output + recording URL.
     from config import CALL_SUMMARY_WEBHOOK_URL
     from call_webhook import push_call_summary_webhook
     if CALL_SUMMARY_WEBHOOK_URL and call_uuid:
         rec_start_ms  = data.get("recording_start_ms", "")
         rec_end_ms    = data.get("recording_end_ms",   "")
         rec_dur_ms    = data.get("recording_duration_ms", "")
-        wh_rec = {
-            "call_sid":            call_uuid,
-            "recording_url":       record_url,
-            "recording_id":        recording_id,
-            "duration_sec":        duration,
-            "recording_start_ms":  rec_start_ms,
-            "recording_end_ms":    rec_end_ms,
+        rec_fields = {
+            "recording_url":         record_url,
+            "recording_id":          recording_id,
+            "duration_sec":          duration,
+            "recording_start_ms":    rec_start_ms,
+            "recording_end_ms":      rec_end_ms,
             "recording_duration_ms": rec_dur_ms,
-            "ts":                  ts_str,
-            "event":               "recording_ready",
+            "ts":                    ts_str,
+            "event":                 "recording_ready",
         }
-        await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_rec)
-        log.info("Recording fields pushed to push_data webhook — call=%s", call_uuid)
+
+        # Load the per-call summary persisted at hangup time.
+        wh_body: dict = {"call_sid": call_uuid}
+        try:
+            from pathlib import Path as _Path
+            summary_path = _Path(RECORDINGS_DIR) / f"{call_uuid}.summary.json"
+            if summary_path.exists():
+                with open(summary_path, "r", encoding="utf-8") as fh:
+                    wh_body = _json.load(fh) or {}
+                wh_body["call_sid"] = call_uuid     # belt-and-braces
+            else:
+                log.warning(
+                    "No saved summary file for call=%s — recording push will "
+                    "contain recording fields only.", call_uuid,
+                )
+        except Exception as exc:
+            log.warning("Could not load saved call summary for %s: %s",
+                        call_uuid, exc)
+
+        # Recording fields override any same-name keys (e.g. updated ts/event).
+        wh_body.update(rec_fields)
+
+        await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
+        log.info(
+            "Combined summary+recording pushed to push_data webhook — call=%s "
+            "(fields=%d)", call_uuid, len(wh_body),
+        )
 
     # ── 4. Download Plivo MP3 and push to audio_and_transcripts webhook ────────
     # Run as a background task so the callback returns immediately to Plivo.
