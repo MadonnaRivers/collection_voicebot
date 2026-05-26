@@ -24,31 +24,17 @@ PLIVO_PHONE_NUMBER = _req("PLIVO_PHONE_NUMBER")
 SARVAM_API_KEY = _req("SARVAM_API_KEY")
 NGROK_URL      = _req("NGROK_URL").rstrip("/")
 
-# ── Sarvam endpoints ──────────────────────────────────────────────────────────
-SARVAM_STT_WS_BASE  = os.getenv("SARVAM_STT_WS_BASE",  "wss://api.sarvam.ai/speech-to-text/ws")
-SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",     "saaras:v3")
-SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE",  "hi-IN")
-SARVAM_LLM_BASE_URL = os.getenv("SARVAM_LLM_BASE_URL",  "https://api.sarvam.ai/v1")
-SARVAM_VOICE        = os.getenv("SARVAM_VOICE",         "simran")
-
+# ── Sarvam endpoints (STT REST, TTS streaming) ────────────────────────────────
+SARVAM_STT_REST_URL   = "https://api.sarvam.ai/speech-to-text"
 SARVAM_TTS_STREAM_URL = "https://api.sarvam.ai/text-to-speech/stream"
-SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"
+SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 
-SARVAM_STT_WS_URL = (
-    f"{SARVAM_STT_WS_BASE}"
-    f"?language-code={SARVAM_STT_LANGUAGE}"
-    f"&model={SARVAM_STT_MODEL}"
-    f"&mode=transcribe"
-    f"&sample_rate=8000"
-    f"&input_audio_codec=pcm_s16le"
-    f"&vad_signals=true"
-    f"&flush_signal=true"
-)
-
-# Optional fallback STT websocket URL (same query params format as primary).
-# Example:
-# SARVAM_STT_WS_URL_FALLBACK=wss://api.sarvam.ai/speech-to-text/ws?language-code=hi-IN&model=saaras:v2&mode=transcribe&sample_rate=8000&input_audio_codec=pcm_s16le&vad_signals=true&flush_signal=true
-SARVAM_STT_WS_URL_FALLBACK = os.getenv("SARVAM_STT_WS_URL_FALLBACK", "").strip()
+# Hindi-native transcription model. saarika v3 does not exist; v2.5 is the
+# latest in the saarika line. (saaras:v3 is newer but translates to English by
+# default — we stay on saarika for Devanagari output that matches the prompt.)
+SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saarika:v2.5")
+SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
+SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
@@ -90,8 +76,21 @@ HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
 SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "6.5"))
 TTS_PACE                 = float(os.getenv("TTS_PACE",                 "1.1"))
 BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
-# 0.2s: END_SPEECH from Sarvam fires before this timer for normal sentences
-POST_UTTERANCE_PAUSE_SEC = float(os.getenv("POST_UTTERANCE_PAUSE_SEC", "0.6"))
+
+# ── STT (REST + local VAD) tunables ───────────────────────────────────────────
+# Silence after speech before the utterance is POSTed to Sarvam REST.
+STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "700"))
+# Drop bursts shorter than this (cough/pop/noise).
+STT_MIN_UTTERANCE_MS    = int(os.getenv("STT_MIN_UTTERANCE_MS",    "200"))
+# Force-flush long monologues. Sarvam REST caps at 30 s.
+STT_MAX_UTTERANCE_SEC   = float(os.getenv("STT_MAX_UTTERANCE_SEC",  "25"))
+# Consecutive VAD-speech frames required before firing the barge-in signal.
+STT_BARGE_IN_MIN_FRAMES = int(os.getenv("STT_BARGE_IN_MIN_FRAMES", "12"))
+
+# TTS concurrency
+TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "12"))
+TTS_MAX_RETRIES      = int(os.getenv("TTS_MAX_RETRIES",      "4"))
+TTS_READ_TIMEOUT_SEC = float(os.getenv("TTS_READ_TIMEOUT_SEC","20"))
 
 # ── VAD (WebRTC noise gate) ───────────────────────────────────────────────────
 VAD_MODE        = int(os.getenv("VAD_MODE",        "2"))

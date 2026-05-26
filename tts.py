@@ -250,6 +250,34 @@ def _split_sentences(text: str) -> list[str]:
     return [p.strip() for p in merged if p.strip()]
 
 
+async def tts_speak(
+    text: str,
+    on_chunk: Callable[[bytes], Awaitable[None]],
+    abort: list[bool],
+) -> bool:
+    """
+    Bot-turn entry point. Use streaming for low time-to-first-audio; fall back
+    to one-shot REST if the stream returns nothing.
+    """
+    text = (text or "").strip()
+    if not text or abort[0]:
+        return False
+    if await tts_stream(text, on_chunk, abort):
+        return True
+    if abort[0]:
+        return False
+    log.warning("[TTS] stream produced no audio — falling back to REST")
+    try:
+        audio = await tts_rest(text)
+    except Exception as exc:
+        log.error("[TTS] REST fallback failed: %s", exc)
+        return False
+    if not audio or abort[0]:
+        return False
+    await on_chunk(_strip_wav_header(audio))
+    return True
+
+
 async def tts_stream_pipelined(
     text: str,
     on_chunk: Callable[[bytes], Awaitable[None]],

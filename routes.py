@@ -65,32 +65,37 @@ async def health() -> JSONResponse:
 @app.get("/debug")
 async def debug() -> JSONResponse:
     """Diagnose config + connectivity — call this when something breaks."""
-    import websockets as _ws
     import httpx as _httpx
     import asyncio as _asyncio
     import time as _time
     from config import (
-        NGROK_URL, SARVAM_STT_WS_URL, SARVAM_API_KEY,
-        SARVAM_TTS_STREAM_URL, SARVAM_VOICE,
+        NGROK_URL, SARVAM_STT_REST_URL, SARVAM_STT_MODEL, SARVAM_STT_LANGUAGE,
+        SARVAM_API_KEY, SARVAM_TTS_STREAM_URL, SARVAM_VOICE,
         LLM_MODEL, PORT,
         PLIVO_AUTH_ID, PLIVO_PHONE_NUMBER,
         RECORDING_CALLBACK_URL, AUDIO_TRANSCRIPT_WEBHOOK_URL,
     )
 
-    # ── 1. Sarvam STT WebSocket — open + close ─────────────────────────────
+    # ── 1. Sarvam STT REST — tiny silent-wav probe ─────────────────────────
     stt_ok, stt_err, stt_ms = False, "", 0
     try:
+        import io as _io, wave as _wave
+        _buf = _io.BytesIO()
+        with _wave.open(_buf, "wb") as _w:
+            _w.setnchannels(1); _w.setsampwidth(2); _w.setframerate(16000)
+            _w.writeframes(b"\x00\x00" * 16000)  # 1 s of silence
         t0 = _time.time()
-        conn = await _asyncio.wait_for(
-            _ws.connect(
-                SARVAM_STT_WS_URL,
-                extra_headers={"Api-Subscription-Key": SARVAM_API_KEY},
-            ),
-            timeout=5.0,
-        )
-        await conn.close()
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                SARVAM_STT_REST_URL,
+                headers={"api-subscription-key": SARVAM_API_KEY},
+                files={"file": ("probe.wav", _buf.getvalue(), "audio/wav")},
+                data={"model": SARVAM_STT_MODEL, "language_code": SARVAM_STT_LANGUAGE},
+            )
         stt_ms = int((_time.time() - t0) * 1000)
-        stt_ok = True
+        stt_ok = r.status_code == 200
+        if not stt_ok:
+            stt_err = f"HTTP {r.status_code}: {r.text[:200]}"
     except Exception as exc:
         stt_err = f"{type(exc).__name__}: {exc}"
 
@@ -167,7 +172,8 @@ async def debug() -> JSONResponse:
             "note":  "tests https://api.sarvam.ai HEAD",
         },
         "sarvam_stt": {
-            "url":         SARVAM_STT_WS_URL,
+            "url":         SARVAM_STT_REST_URL,
+            "model":       SARVAM_STT_MODEL,
             "reachable":   stt_ok,
             "latency_ms":  stt_ms,
             "error":       stt_err or None,
@@ -248,7 +254,7 @@ async def make_call(
         oldest = next(iter(pending_ctx))
         pending_ctx.pop(oldest, None)
         log.warning("pending_ctx overflow — evicted oldest key %s", oldest)
-    log.info("Outbound call initiated — SID=%s to=%s", call_sid, to)
+    log.info("[PLIVO] dialed %s — request_uuid=%s", to, call_sid)
     return JSONResponse({"call_sid": call_sid})
 
 

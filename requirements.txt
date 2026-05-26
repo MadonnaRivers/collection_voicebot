@@ -31,6 +31,5 @@ tqdm==4.67.3
 typing_extensions==4.13.2
 urllib3==2.2.3
 uvicorn==0.30.6
-websockets==13.1
 yarl==1.12.1
 python-multipart==0.0.9

@@ -89,7 +89,7 @@ async def start_recording(call_uuid: str, callback_url: str = "") -> str:
                 return ""
             body = r.json()
             rec_id = body.get("recording_id", "")
-            log.info("Plivo recording started — call=%s recording_id=%s", call_uuid, rec_id)
+            log.info("[PLIVO] recording started — call=%s recording_id=%s", call_uuid, rec_id)
             return rec_id
         except Exception as exc:
             log.warning("Plivo start_recording error: %s", exc)
