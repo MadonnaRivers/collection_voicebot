@@ -106,7 +106,10 @@ async def debug() -> JSONResponse:
                     "text": "टेस्ट",
                     "target_language_code": "hi-IN",
                     "speaker": SARVAM_VOICE,
-                    "model": "bulbul:v2",
+                    # Must match the model used by tts.py — see _tts_payload().
+                    # Sarvam validates speaker against model, so any drift here
+                    # would falsely fail the health check.
+                    "model": "bulbul:v3",
                 },
             )
         tts_ms = int((_time.time() - t0) * 1000)
