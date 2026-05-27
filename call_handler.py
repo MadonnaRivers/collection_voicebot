@@ -108,33 +108,60 @@ async def media_stream(ws: WebSocket) -> None:
         # make the TTS voice "break" mid-syllable when Sarvam pauses briefly
         # between streaming chunks.
         _frame_deadline = [0.0]
+        # Leftover (< 160 byte) remainder carried between push() calls.
+        # CRITICAL: Sarvam streams arbitrary-size chunks (e.g. 1024 bytes),
+        # which are NOT multiples of 160. If we padded each chunk's tail
+        # frame to 160 with silence, we'd inject ~12 ms of 0xFF silence at
+        # EVERY chunk boundary (~8×/sec) → continuous crackle. Instead we
+        # carry the remainder forward and only emit full 160-byte frames.
+        _pcm_carry = [b""]
 
         async def push(chunk: bytes) -> None:
             if sess.done or abort[0] or sess._hangup_started or not sess.stream_sid:
                 return
             try:
                 _FRAME_DUR = 160 / 8000.0
+                buf = _pcm_carry[0] + chunk
+                _pcm_carry[0] = b""
                 now = time.monotonic()
                 if _frame_deadline[0] == 0.0 or now - _frame_deadline[0] > 0.25:
                     _frame_deadline[0] = now
-                for offset in range(0, len(chunk), 160):
+                n = len(buf)
+                full = (n // 160) * 160
+                for offset in range(0, full, 160):
                     if sess.done or abort[0] or sess._hangup_started:
+                        _pcm_carry[0] = b""
                         return
-                    frame = chunk[offset:offset + 160]
-                    if not frame:
-                        return
-                    if len(frame) < 160:
-                        frame = frame + (b"\xff" * (160 - len(frame)))
+                    frame = buf[offset:offset + 160]
                     await ws.send_json(_carrier.media_msg(frame, sess.stream_sid))
-                    _utt_bytes_pushed[0] += len(frame)
+                    _utt_bytes_pushed[0] += 160
                     _audio_drain_time[0] = _utt_push_start[0] + _utt_bytes_pushed[0] / 8000.0
                     _frame_deadline[0] += _FRAME_DUR
                     sleep_for = _frame_deadline[0] - time.monotonic()
                     await asyncio.sleep(max(0.0, sleep_for))
+                # Carry the sub-160 remainder into the next chunk (no padding).
+                if full < n:
+                    _pcm_carry[0] = buf[full:]
             except Exception as exc:
                 abort[0] = True
                 if not sess.done and not sess._hangup_started:
                     log.debug("push interrupted (carrier gone): %s", exc)
+
+        async def _flush_carry() -> None:
+            """Emit the final remainder once, padded to a full 160-byte frame.
+            Called only at end of an utterance — padding here is harmless
+            (single ~< 20 ms tail), unlike mid-stream padding."""
+            rem = _pcm_carry[0]
+            _pcm_carry[0] = b""
+            if not rem or sess.done or abort[0] or sess._hangup_started or not sess.stream_sid:
+                return
+            frame = rem + (b"\xff" * (160 - len(rem)))
+            try:
+                await ws.send_json(_carrier.media_msg(frame, sess.stream_sid))
+                _utt_bytes_pushed[0] += 160
+                _audio_drain_time[0] = _utt_push_start[0] + _utt_bytes_pushed[0] / 8000.0
+            except Exception:
+                pass
 
         async def send_mark() -> None:
             if sess.done or not sess.stream_sid:
@@ -163,11 +190,24 @@ async def media_stream(ws: WebSocket) -> None:
             except Exception:
                 pass
 
+        # Goodbye/terminal markers — every closing line ends with one of these.
+        # If the line being spoken is a closing, suppress barge-in for its whole
+        # duration (streaming sets sess.closing_in_progress too late otherwise).
+        _CLOSING_MARKERS = (
+            "आपका दिन शुभ हो",          # payment_confirm / ptp / partial / cannot_pay / disputed
+            "records update कर देंगे",   # already_paid
+            "team जल्द आपसे contact",    # deceased
+            "call back करेंगे",          # no_response
+        )
+
         # ── TTS ─────────────────────────────────────────────────────────────
         async def play_tts(text: str) -> None:
             text = text.strip()
             if not text or sess.done or sess._hangup_started or not sess.stream_sid:
                 return
+            # Closing line → no barge-in while the goodbye plays.
+            if any(m in text for m in _CLOSING_MARKERS):
+                sess.closing_in_progress = True
             t0 = time.perf_counter()
             abort[0] = False
             sess.barge_in_active = False
@@ -175,11 +215,14 @@ async def media_stream(ws: WebSocket) -> None:
             _utt_push_start[0]   = time.monotonic()
             _utt_bytes_pushed[0] = 0
             _frame_deadline[0]   = 0.0
+            _pcm_carry[0]        = b""   # fresh utterance, no carried remainder
             sess.speaking = True
             try:
                 ok = await tts_speak(text, push, abort)
                 if not ok:
                     log.warning("[TTS] produced no audio for: %.40s", text)
+                if not abort[0]:
+                    await _flush_carry()   # emit final sub-160 tail once, padded
                 if not sess.done:
                     await send_mark()
             except Exception as exc:
@@ -211,20 +254,11 @@ async def media_stream(ws: WebSocket) -> None:
             return sess.opening_complete and not sess.closing_in_progress
 
         async def on_speech_start() -> None:
+            # Barge-in is DISABLED. The bot always finishes its current line;
+            # whatever the customer says meanwhile is transcribed and queued,
+            # then handled on the next turn. (Half-duplex / turn-based.)
             log.info("[STT] speech detected")
-            if not sess.speaking:
-                return
-            _guard = time.monotonic() - sess.tts_started_at
-            if not _barge_in_allowed():
-                log.debug("[STT] barge-in suppressed (opening/closing)")
-                return
-            if _guard < BARGE_IN_GUARD_SEC:
-                log.debug("[STT] barge-in suppressed (guard %.0f ms)", _guard * 1000)
-                return
-            log.info("[STT] barge-in — aborting TTS")
-            abort[0] = True
-            sess.barge_in_active = True
-            await send_clear()
+            return
 
         async def on_transcript(text: str) -> None:
             text = (text or "").strip()

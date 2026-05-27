@@ -34,7 +34,9 @@ SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 # default — we stay on saarika for Devanagari output that matches the prompt.)
 SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saarika:v2.5")
 SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
-SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
+# bulbul:v3 formal female speakers: ishita (default here), simran, ritu, priya,
+# pooja, neha, kavya, shreya, roopa. (v2-only speakers like anushka won't work.)
+SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "ishita")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
@@ -100,6 +102,6 @@ VAD_ENABLED     = os.getenv("VAD_ENABLED", "true").lower() not in ("0", "false",
 
 # ── Spectral denoiser ─────────────────────────────────────────────────────────
 DENOISE_ENABLED     = os.getenv("DENOISE_ENABLED",     "true").lower() not in ("0", "false", "no")
-DENOISE_STRENGTH    = float(os.getenv("DENOISE_STRENGTH",    "0.88"))
+DENOISE_STRENGTH    = float(os.getenv("DENOISE_STRENGTH",    "0.92"))
 DENOISE_PROFILE_SEC = float(os.getenv("DENOISE_PROFILE_SEC", "2.0"))
 DENOISE_STATIONARY  = os.getenv("DENOISE_STATIONARY", "false").lower() not in ("0", "false", "no")

@@ -206,13 +206,13 @@ _FLOW_SPEC = """\
               context_patch.out_of_window_attempts = "2"।
             दोनों cases में: target_date store मत करें। end_call=false, call_phase="ptp"।
      3. ACCEPT path — सिर्फ तब जब window check pass हुआ:
-        context_patch.target_date = "YYYY-MM-DD"।
+        context_patch.target_date = "YYYY-MM-DD"  (हमेशा store करो — CRM के लिए)।
         out_of_window_attempts को छेड़ो मत (existing value रखो या ही skip करो)।
-        Closing (exact, बिना confirmation step के):
-          "Thank you [NAME] जी। Payment के लिए SMS में भेजे गए link का use कीजिए।
-           [TARGET_DATE] तक payment कर दीजिए ताकि आपका credit score safe रहे।
-           आपका दिन शुभ हो।"
-        [TARGET_DATE] = "DD Mon YYYY" format।
+        NOTE: target_date सिर्फ store करो — closing में date कभी मत बोलो।
+        Closing (exact, बिना confirmation step के, बिना date बोले):
+          "ठीक है [NAME] जी, मैंने note कर लिया है। please जल्द से जल्द अपनी
+           overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका
+           CIBIL score safe रहे। आपका दिन शुभ हो।"
         call_phase="ptp", end_call=true, hangup_reason="ptp_confirmed"।
 
    NOTE: FORBIDDEN: window से बाहर की date को कभी accept मत करना — चाहे customer
@@ -234,12 +234,15 @@ _FLOW_SPEC = """\
      - Genuine reason (job loss, medical, financial issue, family emergency, business loss,
        salary delay, इत्यादि — कोई coherent adult explanation):
        context_patch.cannot_pay_reason = "<short English summary, 5-15 words>"।
-       "समझ रही हूँ [NAME] जी। जल्द से जल्द EMI pay करने की कोशिश कीजिए। आपका दिन शुभ हो।"
+       "समझ रही हूँ [NAME] जी। जल्द से जल्द EMI pay करने की कोशिश कीजिए,
+        वरना pending EMI से आपका CIBIL score खराब हो सकता है। आपका दिन शुभ हो।"
        end_call=true, hangup_reason="cannot_pay_acknowledged", call_phase="cannot_pay"।
      - Uncooperative / evasive / gibberish ("pata nahi", "kuch nahi", random):
        context_patch.cannot_pay_reason = "uncooperative"।
-       "ठीक है [NAME] जी। please जल्द से जल्द EMI pay कर दीजिए। आपका दिन शुभ हो।"
+       "ठीक है [NAME] जी। please जल्द से जल्द EMI pay कर दीजिए,
+        वरना pending EMI से आपका CIBIL score खराब हो सकता है। आपका दिन शुभ हो।"
        end_call=true, hangup_reason="cannot_pay_acknowledged", call_phase="cannot_pay"।
+   NOTE: cannot_pay का end line चाहे जो भी हो, CIBIL/credit score warning हमेशा include करो।
    NOTE: cannot_pay_reason store किए बिना call close न करें।
 
 5) partial — NOTE: trigger ONLY जब ग्राहक खुद specific amount propose करे
@@ -672,10 +675,11 @@ def _maybe_rescue_in_window_date(
         )
         hangup = "partial_confirmed"
     else:
+        # PTP accept — DO NOT speak the target date (it's still stored below for CRM).
         closing = (
-            f"Thank you {name_prefix}। Payment के लिए SMS में भेजे गए link का use कीजिए। "
-            f"{target_human} तक payment कर दीजिए ताकि आपका credit score safe रहे। "
-            "आपका दिन शुभ हो।"
+            f"ठीक है {name_prefix}, मैंने note कर लिया है। please जल्द से जल्द अपनी "
+            "overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका "
+            "CIBIL score safe रहे। आपका दिन शुभ हो।"
         )
         hangup = "ptp_confirmed"
 
@@ -695,6 +699,30 @@ def _maybe_rescue_in_window_date(
         "hangup_reason": hangup,
         "call_phase":    phase,
     }
+
+
+def _enforce_ptp_no_date_closing(
+    result: dict[str, Any],
+    ctx: dict[str, str],
+) -> dict[str, Any]:
+    """
+    Deterministic: a confirmed PTP closing must NOT speak the target date.
+    The LLM sometimes improvises "...28 May 2026 के लिए note कर ली है" even
+    though the prompt says not to. We force the canonical no-date closing
+    while keeping target_date in the context patch (CRM still gets it).
+    """
+    if result.get("hangup_reason") != "ptp_confirmed":
+        return result
+    if not result.get("end_call"):
+        return result
+    name = (ctx.get("customer_name") or "").strip()
+    name_prefix = f"{name} जी" if name else "जी"
+    fixed = (
+        f"ठीक है {name_prefix}, मैंने note कर लिया है। please जल्द से जल्द अपनी "
+        "overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका "
+        "CIBIL score safe रहे। आपका दिन शुभ हो।"
+    )
+    return dict(result, say=fixed)
 
 
 def _maybe_enforce_90day_window(
@@ -873,6 +901,8 @@ async def run_conversation_turn(
         # Safety net: rescue an in-window date the LLM mistakenly rejected
         # (e.g. bare "29 तक" that the LLM computed wrong).
         result = _maybe_rescue_in_window_date(result, user_message, ctx)
+        # PTP closing must never speak the date — enforce canonical wording.
+        result = _enforce_ptp_no_date_closing(result, ctx)
         return result
 
     last_exc: BaseException | None = None
@@ -985,12 +1015,19 @@ async def stream_conversation_turn(
             stream=True,
         )
 
-        # Race-condition guard: if the streamed `say` looks like a date-window
-        # rejection, defer the on_say call until after the safety nets run.
-        # Otherwise TTS speaks the rejection before _maybe_rescue_in_window_date
-        # can override it with an accept.
-        def _looks_like_date_rejection(text: str) -> bool:
-            return ("valid नहीं" in text) or ("इतनी देर" in text)
+        # Defer the early on_say (and thus TTS) when the streamed `say` is
+        # something a safety net may rewrite:
+        #   • a date-window rejection (_maybe_rescue_in_window_date may accept)
+        #   • a closing that contains a date — for PTP the date must be stripped
+        #     (_enforce_ptp_no_date_closing). We can't tell PTP from
+        #     payment_confirm/partial mid-stream, so we defer any date-bearing
+        #     say; the small delay only affects terminal closings.
+        _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug",
+                   "Sep", "Oct", "Nov", "Dec", "तारीख")
+        def _should_defer_say(text: str) -> bool:
+            if ("valid नहीं" in text) or ("इतनी देर" in text):
+                return True
+            return any(m in text for m in _MONTHS)
 
         async for chunk in stream:
             delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
@@ -998,12 +1035,10 @@ async def stream_conversation_turn(
             if not say_fired:
                 say = _extract_say_from_stream(accumulated)
                 if say:
-                    if _looks_like_date_rejection(say):
-                        # Defer — wait for full JSON + safety nets
-                        log.debug(
-                            "Deferring streaming on_say for potential date "
-                            "rejection: %r", say[:80],
-                        )
+                    if _should_defer_say(say):
+                        # Defer — wait for full JSON + safety nets, then fire
+                        # the corrected say below.
+                        log.debug("Deferring streaming on_say (safety net may rewrite): %r", say[:80])
                     else:
                         say_fired = True
                         await on_say(say)
@@ -1028,8 +1063,11 @@ async def stream_conversation_turn(
         # Safety net: rescue an in-window date the LLM mistakenly rejected
         # (e.g. bare "29 तक" that the LLM computed wrong).
         result = _maybe_rescue_in_window_date(result, user_message, ctx)
+        # PTP closing must never speak the date — enforce canonical wording.
+        result = _enforce_ptp_no_date_closing(result, ctx)
 
-        # Safety: fire on_say if regex never matched (unusual JSON ordering)
+        # Fire on_say if not already fired (deferred date-bearing say, or regex
+        # never matched). Uses the FINAL corrected say.
         if not say_fired:
             await on_say(result["say"] or _fallback_hindi()["say"])
 
