@@ -571,9 +571,11 @@ async def media_stream(ws: WebSocket) -> None:
                     break
 
                 # Merge fragments arriving within a short window so we don't
-                # respond to half a sentence.
+                # respond to half a sentence. Kept short (0.5 s) — the 500 ms
+                # STT silence hangover already groups most speech, so a long
+                # merge wait is mostly dead time before the bot replies.
                 fragments = [utterance]
-                MERGE_WINDOW_SEC = 1.2
+                MERGE_WINDOW_SEC = 0.5
                 while True:
                     try:
                         nxt = await asyncio.wait_for(utt_q.get(), timeout=MERGE_WINDOW_SEC)

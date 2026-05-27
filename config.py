@@ -44,7 +44,9 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Orchestrator (voice dialogue brain)
 ORCHESTRATOR_TEMPERATURE    = float(os.getenv("ORCHESTRATOR_TEMPERATURE",    "0.1"))
-ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "28"))
+# Fewer history messages → smaller prompt → faster LLM time-to-first-token
+# on later turns. 18 still keeps ~9 exchanges of context.
+ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "18"))
 ORCHESTRATOR_API_RETRIES    = int(os.getenv("ORCHESTRATOR_API_RETRIES",      "3"))
 # 400 tokens: enough for the longest payment_confirm template + JSON wrapper
 ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "400"))
@@ -81,7 +83,7 @@ BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 
 # ── STT (REST + local VAD) tunables ───────────────────────────────────────────
 # Silence after speech before the utterance is POSTed to Sarvam REST.
-STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "700"))
+STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "500"))
 # Drop bursts shorter than this (cough/pop/noise).
 STT_MIN_UTTERANCE_MS    = int(os.getenv("STT_MIN_UTTERANCE_MS",    "200"))
 # Force-flush long monologues. Sarvam REST caps at 30 s.

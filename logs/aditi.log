@@ -2513,3 +2513,128 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 12:18:38 [INFO] aditi — Plivo MP3 download+upload queued — call=5359288c-dae2-41cd-9c46-1dece416ba1e
 12:18:38 [INFO] aditi — Downloading Plivo recording for call=5359288c-dae2-41cd-9c46-1dece416ba1e url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/b7f03a1c-686c-48b3-9dfd-208e162c211c.mp3
 12:18:38 [INFO] aditi — audio_and_transcripts webhook → HTTP 200  call=5359288c-dae2-41cd-9c46-1dece416ba1e  bytes=67536  file=20260527_064802_973068_5359288c-dae2-41cd-9c46-1dece416ba1e.mp3
+12:50:00 [INFO] aditi — HTTP client closed
+12:50:06 [INFO] aditi — aditi — Dialing +917977365303 …
+12:50:06 [INFO] aditi — Logging active: info_log=logs/aditi.log error_log=logs/aditi_error.log
+12:50:06 [INFO] aditi — Recording callback URL: https://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/recording-callback
+12:50:08 [INFO] aditi — Plivo call request_uuid: 11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f
+12:50:08 [INFO] aditi — Call SID: 11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f
+12:50:13 [INFO] aditi — pending_ctx rekeyed: 11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f → 11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f
+12:50:13 [INFO] aditi — connect_response ws_url=wss://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/media-stream
+12:50:13 [INFO] aditi — [PLIVO] media stream connected (call answered)
+12:50:13 [INFO] aditi — [PLIVO] call connected — Stream=86187f95-f380-421c-9d46-5b7717dfc859 Call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f
+12:50:13 [INFO] aditi — [BOT] नमस्ते Rahul जी, मैं अदिति बोल रही हूँ Easy Home Finance से। आपकी home loan EMI 8,500 रुपये pending है। आप कब तक payment कर पाएंगे?
+12:50:13 [INFO] aditi — Plivo start_recording → HTTP 200  body={
+  "api_id": "36ae1fc3-d9f2-48a3-a354-1eddc6e54b13",
+  "message": "async api spawned"
+}
+
+12:50:13 [INFO] aditi — [PLIVO] recording started — call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f recording_id=
+12:50:13 [INFO] aditi — [STT] speech detected
+12:50:14 [INFO] aditi — [STT] transcribing — 740 ms utterance
+12:50:14 [INFO] aditi — [STT] empty transcript (234 ms)
+12:50:17 [INFO] aditi — [STT] speech detected
+12:50:19 [INFO] aditi — [STT] transcribing — 1960 ms utterance
+12:50:19 [INFO] aditi — [STT] empty transcript (311 ms)
+12:50:22 [INFO] aditi — [STT] transcribing — 720 ms utterance
+12:50:22 [INFO] aditi — [STT] empty transcript (172 ms)
+12:50:22 [INFO] aditi — [BOT-TTS] done in 9417 ms | नमस्ते Rahul जी, मैं अदिति बोल रही हूँ Easy Home Finance से।
+12:50:24 [INFO] aditi — [STT] speech detected
+12:50:27 [INFO] aditi — [STT] transcribing — 3380 ms utterance
+12:50:27 [INFO] aditi — [STT] transcribed in 265 ms
+12:50:27 [INFO] aditi — [USER] मैं अगले साल कर दूंगा।
+12:50:28 [WARNING] aditi — _hard_date_block: could not parse anchor date from context (emi_overdue_date='', emi_due_date='') — anchoring 90-day window to today (2026-05-27). The customer's 90-day window will NOT match the real EMI due date. Check call setup / parse_date coverage.
+12:50:29 [INFO] aditi — [STT] transcribing — 680 ms utterance
+12:50:29 [INFO] aditi — [STT] empty transcript (282 ms)
+12:50:30 [INFO] aditi — [BOT] यह date valid नहीं है। कोई और date दीजिए कब तक payment कर पाएंगे?
+12:50:31 [INFO] aditi — [STT] speech detected
+12:50:31 [INFO] aditi — [STT] transcribing — 780 ms utterance
+12:50:32 [INFO] aditi — [STT] empty transcript (344 ms)
+12:50:32 [INFO] aditi — [STT] transcribing — 680 ms utterance
+12:50:32 [INFO] aditi — [STT] empty transcript (233 ms)
+12:50:34 [INFO] aditi — [BOT-TTS] done in 4246 ms | यह date valid नहीं है। कोई और date दीजिए कब तक payment कर पा
+12:50:35 [INFO] aditi — [STT] speech detected
+12:50:36 [INFO] aditi — [STT] transcribing — 1380 ms utterance
+12:50:37 [INFO] aditi — [STT] transcribed in 219 ms
+12:50:37 [INFO] aditi — [USER] अगले महीने।
+12:50:37 [WARNING] aditi — _hard_date_block: could not parse anchor date from context (emi_overdue_date='', emi_due_date='') — anchoring 90-day window to today (2026-05-27). The customer's 90-day window will NOT match the real EMI due date. Check call setup / parse_date coverage.
+12:50:37 [INFO] aditi — [STT] speech detected
+12:50:38 [INFO] aditi — [STT] transcribing — 1080 ms utterance
+12:50:38 [INFO] aditi — [STT] transcribed in 265 ms
+12:50:38 [INFO] aditi — [USER] हाँ सर
+12:50:39 [INFO] aditi — [BOT] ठीक है Rahul जी, मैंने note कर लिया है। please जल्द से जल्द अपनी overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका CIBIL score safe रहे। आपका दिन शुभ हो।
+12:50:41 [INFO] aditi — [STT] transcribing — 1320 ms utterance
+12:50:41 [INFO] aditi — [STT] transcribed in 311 ms
+12:50:41 [INFO] aditi — [USER] हाँ
+12:50:49 [INFO] aditi — [STT] speech detected
+12:50:50 [INFO] aditi — [STT] transcribing — 1100 ms utterance
+12:50:50 [INFO] aditi — [STT] empty transcript (297 ms)
+12:50:51 [INFO] aditi — [STT] speech detected
+12:50:52 [INFO] aditi — [BOT-TTS] done in 13434 ms | ठीक है Rahul जी, मैंने note कर लिया है। please जल्द से जल्द 
+12:50:52 [INFO] aditi — [CALL] LLM loop ended (phase=ptp, turns=2)
+12:50:52 [INFO] aditi — [CALL] hangup — reason=ptp_confirmed
+12:50:52 [INFO] aditi — [STT] transcribing — 700 ms utterance
+12:50:52 [INFO] aditi — [CALL] media stream handler closed
+12:50:52 [INFO] aditi — [STT] empty transcript (157 ms)
+12:50:53 [INFO] aditi — CALL_VARS {'summary': 'Customer Rahul promised to pay the overdue EMI next month.', 'target_date': '2026-06-27'}
+12:50:54 [INFO] aditi — Call summary persisted (call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f)
+12:50:55 [INFO] aditi — Plivo call 11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f terminated
+12:50:57 [INFO] aditi — connect_response ws_url=wss://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/media-stream
+12:50:57 [INFO] aditi — Recording callback — headers={'host': '70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app', 'user-agent': 'PlivoProxy/1.0', 'content-length': '591', 'accept': '*/*', 'accept-encoding': 'gzip', 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': '3.7.220.174', 'x-forwarded-host': '70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app', 'x-forwarded-proto': 'https', 'x-plivo-cloud': 'v1', 'x-plivo-signature': 'CzTmRtPFpVfl2cBVkMDRLjxdAk0=', 'x-plivo-signature-ma-v2': 'C1hAKVii+ckWy6za3r8f6z3ex/xr0ykJHH2FVgqE2sE=', 'x-plivo-signature-ma-v3': '/4/MTxXoG3kaw/pF8x6alr0AbGcmNPqN7XZCaxnx5Yk=', 'x-plivo-signature-v2': 'C1hAKVii+ckWy6za3r8f6z3ex/xr0ykJHH2FVgqE2sE=', 'x-plivo-signature-v2-nonce': '62161959385149705657', 'x-plivo-signature-v3': '/4/MTxXoG3kaw/pF8x6alr0AbGcmNPqN7XZCaxnx5Yk=', 'x-plivo-signature-v3-nonce': '75681123148543479567'}  query={}  body=b''
+12:50:57 [INFO] aditi — Recording callback parsed data: {'response': '{"message":"record done","record_url":"https:\\/\\/aps1.media.plivo.com\\/v1\\/Account\\/MANDNJNDUXZGUTMJC0ZC\\/Recording\\/16c471c2-33ea-4492-a68c-62ec05c9afde.mp3","api_id":"36ae1fc3-d9f2-48a3-a354-1eddc6e54b13","call_uuid":"11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f","recording_id":"16c471c2-33ea-4492-a68c-62ec05c9afde","recording_start_ms":"1779866414092","recording_end_ms":"1779866456252","recording_duration_ms":"42160","recording_duration":"42"}'}
+12:50:57 [INFO] aditi — Recording callback unwrapped 'response' field: {'response': '{"message":"record done","record_url":"https:\\/\\/aps1.media.plivo.com\\/v1\\/Account\\/MANDNJNDUXZGUTMJC0ZC\\/Recording\\/16c471c2-33ea-4492-a68c-62ec05c9afde.mp3","api_id":"36ae1fc3-d9f2-48a3-a354-1eddc6e54b13","call_uuid":"11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f","recording_id":"16c471c2-33ea-4492-a68c-62ec05c9afde","recording_start_ms":"1779866414092","recording_end_ms":"1779866456252","recording_duration_ms":"42160","recording_duration":"42"}', 'message': 'record done', 'record_url': 'https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/16c471c2-33ea-4492-a68c-62ec05c9afde.mp3', 'api_id': '36ae1fc3-d9f2-48a3-a354-1eddc6e54b13', 'call_uuid': '11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f', 'recording_id': '16c471c2-33ea-4492-a68c-62ec05c9afde', 'recording_start_ms': '1779866414092', 'recording_end_ms': '1779866456252', 'recording_duration_ms': '42160', 'recording_duration': '42'}
+12:50:57 [INFO] aditi — Recording ready — call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f duration=42s url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/16c471c2-33ea-4492-a68c-62ec05c9afde.mp3
+12:50:57 [INFO] aditi — Recording URL saved to transcript: transcripts/20260527_072013_539807_11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f.jsonl
+12:50:57 [INFO] aditi — Recording metadata saved: recordings/11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f.json
+12:50:57 [WARNING] aditi — Call summary webhook failed: Client error '404 Not Found' for url 'https://uat-n8n.easyhomefinance.in/webhook-test/push_data'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+12:50:57 [INFO] aditi — Combined summary+recording pushed to push_data webhook — call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f (fields=30)
+12:50:57 [INFO] aditi — Plivo MP3 download+upload queued — call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f
+12:50:57 [INFO] aditi — Downloading Plivo recording for call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/16c471c2-33ea-4492-a68c-62ec05c9afde.mp3
+12:50:58 [INFO] aditi — audio_and_transcripts webhook → HTTP 200  call=11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f  bytes=85248  file=20260527_072013_539807_11d3cdc2-a2ca-4c0a-ac10-bd07a324d60f.mp3
+12:52:01 [INFO] aditi — Plivo call request_uuid: e77644aa-c0d9-40f5-b6de-0cf4706e09c4
+12:52:01 [INFO] aditi — [PLIVO] dialed +919407666014 — request_uuid=e77644aa-c0d9-40f5-b6de-0cf4706e09c4
+12:52:12 [INFO] aditi — pending_ctx rekeyed: e77644aa-c0d9-40f5-b6de-0cf4706e09c4 → e77644aa-c0d9-40f5-b6de-0cf4706e09c4
+12:52:12 [INFO] aditi — connect_response ws_url=wss://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/media-stream
+12:52:12 [INFO] aditi — [PLIVO] media stream connected (call answered)
+12:52:12 [INFO] aditi — [PLIVO] call connected — Stream=4ad3ae0e-439a-4e4d-a167-59d6b884ac4a Call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4
+12:52:12 [INFO] aditi — [BOT] नमस्ते Rohan जी, मैं अदिति बोल रही हूँ Easy Home Finance से। आपकी home loan EMI 45000 रुपये pending है। आप कब तक payment कर पाएंगे?
+12:52:12 [INFO] aditi — Plivo start_recording → HTTP 200  body={
+  "api_id": "d28bfa07-4fd3-4259-a4b6-399a48bb90e9",
+  "message": "async api spawned"
+}
+
+12:52:12 [INFO] aditi — [PLIVO] recording started — call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4 recording_id=
+12:52:12 [INFO] aditi — [STT] speech detected
+12:52:12 [INFO] aditi — [STT] transcribing — 740 ms utterance
+12:52:13 [INFO] aditi — [STT] empty transcript (250 ms)
+12:52:22 [INFO] aditi — [BOT-TTS] done in 10252 ms | नमस्ते Rohan जी, मैं अदिति बोल रही हूँ Easy Home Finance से।
+12:52:24 [INFO] aditi — [STT] speech detected
+12:52:26 [INFO] aditi — [STT] transcribing — 2840 ms utterance
+12:52:27 [INFO] aditi — [STT] transcribed in 297 ms
+12:52:27 [INFO] aditi — [USER] मैं अगले महीने पे कर दूंगा।
+12:52:30 [INFO] aditi — [STT] speech detected
+12:52:30 [INFO] aditi — [BOT] ठीक है Rohan जी, मैंने note कर लिया है। please जल्द से जल्द अपनी overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका CIBIL score safe रहे। आपका दिन शुभ हो।
+12:52:31 [INFO] aditi — [STT] transcribing — 1040 ms utterance
+12:52:31 [INFO] aditi — [STT] transcribed in 296 ms
+12:52:31 [INFO] aditi — [USER] हेलो
+12:52:41 [INFO] aditi — [BOT-TTS] done in 11084 ms | ठीक है Rohan जी, मैंने note कर लिया है। please जल्द से जल्द 
+12:52:41 [INFO] aditi — [CALL] LLM loop ended (phase=ptp, turns=1)
+12:52:41 [INFO] aditi — [CALL] hangup — reason=ptp_confirmed
+12:52:41 [INFO] aditi — [CALL] media stream handler closed
+12:52:44 [INFO] aditi — CALL_VARS {'summary': 'Customer Rohan promised to pay the overdue EMI next month.', 'target_date': '2026-06-27'}
+12:52:44 [INFO] aditi — Call summary persisted (call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4)
+12:52:45 [INFO] aditi — Plivo call e77644aa-c0d9-40f5-b6de-0cf4706e09c4 terminated
+12:52:46 [INFO] aditi — Recording callback — headers={'host': '70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app', 'user-agent': 'PlivoProxy/1.0', 'content-length': '591', 'accept': '*/*', 'accept-encoding': 'gzip', 'content-type': 'application/x-www-form-urlencoded', 'x-forwarded-for': '3.7.220.174', 'x-forwarded-host': '70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app', 'x-forwarded-proto': 'https', 'x-plivo-cloud': 'v1', 'x-plivo-signature': 'vVJZn2sfzlzwUbeL7RclETmhr5k=', 'x-plivo-signature-ma-v2': '0s+qnMAdv7ixU3kRYjpl3IOmKStxvxemkvcGWpZ9l0M=', 'x-plivo-signature-ma-v3': 'y/arVYtsy4FekSLn1H4pMH4NvPIAUXwm+pXV4giQML0=', 'x-plivo-signature-v2': '0s+qnMAdv7ixU3kRYjpl3IOmKStxvxemkvcGWpZ9l0M=', 'x-plivo-signature-v2-nonce': '33060094806213943417', 'x-plivo-signature-v3': 'y/arVYtsy4FekSLn1H4pMH4NvPIAUXwm+pXV4giQML0=', 'x-plivo-signature-v3-nonce': '95273499729567754413'}  query={}  body=b''
+12:52:46 [INFO] aditi — Recording callback parsed data: {'response': '{"record_url":"https:\\/\\/aps1.media.plivo.com\\/v1\\/Account\\/MANDNJNDUXZGUTMJC0ZC\\/Recording\\/93d1b154-7944-4a74-9867-941623f3209b.mp3","message":"record done","api_id":"d28bfa07-4fd3-4259-a4b6-399a48bb90e9","call_uuid":"e77644aa-c0d9-40f5-b6de-0cf4706e09c4","recording_id":"93d1b154-7944-4a74-9867-941623f3209b","recording_start_ms":"1779866532846","recording_end_ms":"1779866566406","recording_duration_ms":"33560","recording_duration":"33"}'}
+12:52:46 [INFO] aditi — Recording callback unwrapped 'response' field: {'response': '{"record_url":"https:\\/\\/aps1.media.plivo.com\\/v1\\/Account\\/MANDNJNDUXZGUTMJC0ZC\\/Recording\\/93d1b154-7944-4a74-9867-941623f3209b.mp3","message":"record done","api_id":"d28bfa07-4fd3-4259-a4b6-399a48bb90e9","call_uuid":"e77644aa-c0d9-40f5-b6de-0cf4706e09c4","recording_id":"93d1b154-7944-4a74-9867-941623f3209b","recording_start_ms":"1779866532846","recording_end_ms":"1779866566406","recording_duration_ms":"33560","recording_duration":"33"}', 'record_url': 'https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/93d1b154-7944-4a74-9867-941623f3209b.mp3', 'message': 'record done', 'api_id': 'd28bfa07-4fd3-4259-a4b6-399a48bb90e9', 'call_uuid': 'e77644aa-c0d9-40f5-b6de-0cf4706e09c4', 'recording_id': '93d1b154-7944-4a74-9867-941623f3209b', 'recording_start_ms': '1779866532846', 'recording_end_ms': '1779866566406', 'recording_duration_ms': '33560', 'recording_duration': '33'}
+12:52:46 [INFO] aditi — Recording ready — call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4 duration=33s url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/93d1b154-7944-4a74-9867-941623f3209b.mp3
+12:52:46 [INFO] aditi — Recording URL saved to transcript: transcripts/20260527_072212_216663_e77644aa-c0d9-40f5-b6de-0cf4706e09c4.jsonl
+12:52:46 [INFO] aditi — Recording metadata saved: recordings/e77644aa-c0d9-40f5-b6de-0cf4706e09c4.json
+12:52:46 [WARNING] aditi — Call summary webhook failed: Client error '404 Not Found' for url 'https://uat-n8n.easyhomefinance.in/webhook-test/push_data'
+For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/404
+12:52:46 [INFO] aditi — Combined summary+recording pushed to push_data webhook — call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4 (fields=31)
+12:52:46 [INFO] aditi — Plivo MP3 download+upload queued — call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4
+12:52:46 [INFO] aditi — Downloading Plivo recording for call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4 url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/93d1b154-7944-4a74-9867-941623f3209b.mp3
+12:52:47 [INFO] aditi — audio_and_transcripts webhook → HTTP 200  call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4  bytes=67968  file=20260527_072212_216663_e77644aa-c0d9-40f5-b6de-0cf4706e09c4.mp3
+12:52:47 [INFO] aditi — connect_response ws_url=wss://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/media-stream
