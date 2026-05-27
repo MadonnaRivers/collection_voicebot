@@ -367,6 +367,11 @@ async def media_stream(ws: WebSocket) -> None:
                     elif evt_type == "audio_frame":
                         if sess.done:
                             continue
+                        # Half-duplex policy: while bot audio is playing (or terminal
+                        # closing is in progress), ignore inbound audio frames so STT
+                        # doesn't capture bot-side leakage / cross-talk as user input.
+                        if sess.speaking or sess.closing_in_progress:
+                            continue
                         mulaw = payload["mulaw"]
                         try:
                             pcm16 = audioop.ulaw2lin(mulaw, 2)

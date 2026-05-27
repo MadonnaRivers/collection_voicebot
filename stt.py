@@ -1,10 +1,9 @@
 """
-stt.py — Sarvam Speech-to-Text over REST (realtime, VAD-segmented).
+stt.py — Sarvam Speech-to-Text over WebSocket streaming (realtime, VAD-segmented).
 
-Sarvam's REST endpoint accepts short audio (under 30 s). We feed it
-realtime by chopping the live audio into utterances using the local
-WebRTC VAD already running in call_handler, then POST each utterance
-the moment the speaker pauses.
+We keep local per-call VAD segmentation in this module so existing call flow stays
+the same, but each call uses one persistent Sarvam STT WebSocket session instead of
+repeated REST requests. This avoids stt-rt req/min bottlenecks at high concurrency.
 
 Callbacks:
   on_transcript(text)   — fires when an utterance is transcribed.
@@ -14,18 +13,17 @@ Callbacks:
 from __future__ import annotations
 import asyncio
 import audioop
+import base64
 import io
 import logging
 import time
 import wave
 from typing import Awaitable, Callable
 
-import httpx
+from sarvamai import AsyncSarvamAI
 
-from clients import http
 from config import (
     SARVAM_API_KEY,
-    SARVAM_STT_REST_URL,
     SARVAM_STT_MODEL,
     SARVAM_STT_LANGUAGE,
     STT_SILENCE_HANGOVER_MS,
@@ -55,7 +53,7 @@ def _pcm8k_to_wav16k(pcm8k: bytes) -> bytes:
 
 
 class RestStt:
-    """Per-call VAD-segmented STT. Feed 20 ms frames + VAD verdict via feed()."""
+    """Per-call VAD-segmented STT over one persistent WebSocket session."""
 
     def __init__(
         self,
@@ -70,6 +68,51 @@ class RestStt:
         self._closed = False
         self._speech_run = 0
         self._speech_start_fired = False
+        self._flush_lock = asyncio.Lock()
+        self._connect_lock = asyncio.Lock()
+        self._client = AsyncSarvamAI(api_subscription_key=SARVAM_API_KEY)
+        self._ws_cm = None
+        self._ws = None
+
+    async def _ensure_ws(self) -> bool:
+        if self._ws is not None:
+            return True
+        if self._closed:
+            return False
+        async with self._connect_lock:
+            if self._ws is not None:
+                return True
+            try:
+                kwargs: dict[str, str] = {
+                    "language_code": SARVAM_STT_LANGUAGE,
+                    "model": SARVAM_STT_MODEL,
+                    "sample_rate": "16000",
+                    "input_audio_codec": "wav",
+                    "vad_signals": "false",
+                    "flush_signal": "true",
+                }
+                if SARVAM_STT_MODEL.startswith("saaras"):
+                    kwargs["mode"] = "transcribe"
+                self._ws_cm = self._client.speech_to_text_streaming.connect(**kwargs)
+                self._ws = await self._ws_cm.__aenter__()
+                log.info("[STT] streaming websocket connected")
+            except Exception as exc:
+                self._ws = None
+                self._ws_cm = None
+                log.error("[STT] streaming connect failed: %s", exc)
+                return False
+        return True
+
+    async def _close_ws(self) -> None:
+        ws_cm = self._ws_cm
+        self._ws = None
+        self._ws_cm = None
+        if ws_cm is None:
+            return
+        try:
+            await ws_cm.__aexit__(None, None, None)
+        except Exception as exc:
+            log.debug("[STT] websocket close error: %s", exc)
 
     async def feed(self, pcm16_frame: bytes, is_speech: bool) -> None:
         if self._closed:
@@ -108,80 +151,93 @@ class RestStt:
                 asyncio.create_task(self._flush())
 
     async def _flush(self) -> None:
-        if not self._in_speech:
-            return
-        self._in_speech = False
-        self._frames_since_speech = 0
-        self._speech_run = 0
-        self._speech_start_fired = False
-        frames = self._buf
-        self._buf = []
-        if len(frames) < _MIN_FRAMES:
-            return
+        async with self._flush_lock:
+            if not self._in_speech:
+                return
+            self._in_speech = False
+            self._frames_since_speech = 0
+            self._speech_run = 0
+            self._speech_start_fired = False
+            frames = self._buf
+            self._buf = []
+            if len(frames) < _MIN_FRAMES:
+                return
 
-        dur_ms = len(frames) * _FRAME_MS
-        pcm = b"".join(frames)
-        try:
-            wav = _pcm8k_to_wav16k(pcm)
-        except Exception as exc:
-            log.error("[STT] wav encode failed: %s", exc)
-            return
-
-        log.info("[STT] transcribing — %d ms utterance", dur_ms)
-        t0 = time.monotonic()
-
-        # Retry once on transient (network / 5xx / 429).
-        r = None
-        last_err: str | None = None
-        for attempt in range(2):
+            dur_ms = len(frames) * _FRAME_MS
+            pcm = b"".join(frames)
             try:
-                r = await http.post(
-                    SARVAM_STT_REST_URL,
-                    headers={"api-subscription-key": SARVAM_API_KEY},
-                    files={"file": ("utt.wav", wav, "audio/wav")},
-                    data={"model": SARVAM_STT_MODEL, "language_code": SARVAM_STT_LANGUAGE},
-                    timeout=httpx.Timeout(connect=5.0, read=15.0, write=10.0, pool=10.0),
-                )
+                wav = _pcm8k_to_wav16k(pcm)
             except Exception as exc:
-                last_err = f"{type(exc).__name__}: {exc}"
-                log.warning("[STT] REST attempt %d/2 error: %s", attempt + 1, last_err)
-                r = None
-                if attempt == 0:
-                    await asyncio.sleep(0.8)
-                continue
-            if r.status_code == 429 or r.status_code >= 500:
-                last_err = f"HTTP {r.status_code}"
-                log.warning("[STT] REST attempt %d/2 transient: %s", attempt + 1, last_err)
-                if attempt == 0:
-                    await asyncio.sleep(0.8)
+                log.error("[STT] wav encode failed: %s", exc)
+                return
+
+            if not await self._ensure_ws():
+                return
+
+            log.info("[STT] transcribing — %d ms utterance", dur_ms)
+            t0 = time.monotonic()
+            audio_b64 = base64.b64encode(wav).decode("ascii")
+
+            try:
+                await self._ws.transcribe(audio=audio_b64, encoding="audio/wav", sample_rate=16000)
+                await self._ws.flush()
+            except Exception as exc:
+                log.warning("[STT] websocket send/flush error: %s", exc)
+                await self._close_ws()
+                return
+
+            transcript = ""
+            deadline = time.monotonic() + 6.0
+            while time.monotonic() < deadline:
+                try:
+                    msg = await asyncio.wait_for(self._ws.recv(), timeout=2.0)
+                except asyncio.TimeoutError:
                     continue
-            break
+                except Exception as exc:
+                    log.warning("[STT] websocket recv error: %s", exc)
+                    await self._close_ws()
+                    return
 
-        if r is None:
-            log.error("[STT] REST exhausted retries: %s", last_err)
-            return
-        if r.status_code >= 400:
-            log.error("[STT] HTTP %d: %s", r.status_code, r.text[:200])
-            return
+                msg_type = getattr(msg, "type", None) or (msg.get("type") if isinstance(msg, dict) else None)
+                msg_data = getattr(msg, "data", None) or (msg.get("data") if isinstance(msg, dict) else None)
+                if msg_type == "error":
+                    err = getattr(msg_data, "error", None) or str(msg_data)
+                    code = getattr(msg_data, "code", "")
+                    log.error("[STT] websocket error: %s %s", code, err)
+                    break
+                if msg_type in ("events", "event"):
+                    # Ignore speech start/end events in this pull loop.
+                    continue
+                if msg_type == "data":
+                    transcript = (
+                        getattr(msg_data, "transcript", None)
+                        or (msg_data.get("transcript") if isinstance(msg_data, dict) else "")
+                        or ""
+                    ).strip()
+                    break
+                # Compatibility guard: older/newer payload variants may use
+                # direct "transcript" fields without "type":"data".
+                transcript = (
+                    getattr(msg, "transcript", None)
+                    or (msg.get("transcript") if isinstance(msg, dict) else "")
+                    or ""
+                ).strip()
+                if transcript:
+                    break
 
-        try:
-            data = r.json()
-        except Exception as exc:
-            log.error("[STT] JSON parse: %s", exc)
-            return
+            latency_ms = int((time.monotonic() - t0) * 1000)
+            if not transcript:
+                log.info("[STT] empty transcript (%d ms)", latency_ms)
+                return
 
-        transcript = (data.get("transcript") or "").strip()
-        latency_ms = int((time.monotonic() - t0) * 1000)
-        if not transcript:
-            log.info("[STT] empty transcript (%d ms)", latency_ms)
-            return
-        log.info("[STT] transcribed in %d ms", latency_ms)
-        try:
-            await self._on_transcript(transcript)
-        except Exception as exc:
-            log.error("[STT] on_transcript handler error: %s", exc)
+            log.info("[STT] transcribed in %d ms", latency_ms)
+            try:
+                await self._on_transcript(transcript)
+            except Exception as exc:
+                log.error("[STT] on_transcript handler error: %s", exc)
 
     async def close(self) -> None:
         self._closed = True
         if self._in_speech and self._buf:
             await self._flush()
+        await self._close_ws()

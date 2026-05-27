@@ -14,7 +14,7 @@ import time
 
 # Force ALL log timestamps to IST (UTC+5:30) regardless of the server's
 # system timezone — prod boxes are often UTC. Applies to every Formatter.
-def _ist_converter(secs=None):
+def _ist_converter(_formatter=None, secs=None):
     return time.gmtime((secs if secs is not None else time.time()) + 19800)
 logging.Formatter.converter = _ist_converter
 
