@@ -4,7 +4,16 @@ utils.py — Date/amount parsing, formatting and callback-time helpers.
 from __future__ import annotations
 import re
 import sys
-from datetime import date as _date, timedelta
+from datetime import date as _date, datetime as _datetime, timedelta, timezone
+
+# India Standard Time (UTC+5:30). All call/event timestamps use this so logs,
+# transcript filenames and webhook payloads read in local IST.
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def ist_now() -> _datetime:
+    """Timezone-aware current time in IST."""
+    return _datetime.now(IST)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Month name → number map  (Hindi romanised + English)

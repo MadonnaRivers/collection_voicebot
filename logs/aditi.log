@@ -2638,3 +2638,4 @@ For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/St
 12:52:46 [INFO] aditi — Downloading Plivo recording for call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4 url=https://aps1.media.plivo.com/v1/Account/MANDNJNDUXZGUTMJC0ZC/Recording/93d1b154-7944-4a74-9867-941623f3209b.mp3
 12:52:47 [INFO] aditi — audio_and_transcripts webhook → HTTP 200  call=e77644aa-c0d9-40f5-b6de-0cf4706e09c4  bytes=67968  file=20260527_072212_216663_e77644aa-c0d9-40f5-b6de-0cf4706e09c4.mp3
 12:52:47 [INFO] aditi — connect_response ws_url=wss://70d0-2405-201-31-603f-d8ed-7dfc-211d-4d06.ngrok-free.app/media-stream
+13:28:59 [INFO] aditi — HTTP client closed

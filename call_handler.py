@@ -34,6 +34,7 @@ from call_webhook import build_call_summary_push_body
 from denoiser import StreamDenoiser
 from llm_orchestrator import stream_conversation_turn, conversation_to_storage_text
 from scripts import build_opening_greeting
+from utils import ist_now
 from session import CallSession, pending_ctx
 from stt import RestStt
 from tts import tts_speak
@@ -86,7 +87,7 @@ async def media_stream(ws: WebSocket) -> None:
 
         def record(event: str, **fields: Any) -> None:
             if not sess.transcript_path:
-                ts  = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+                ts  = ist_now().strftime("%Y%m%d_%H%M%S_%f")
                 sid = sess.call_sid.replace("/", "_") or "unknown"
                 Path(TRANSCRIPTS_DIR).mkdir(parents=True, exist_ok=True)
                 sess.transcript_path = f"{TRANSCRIPTS_DIR}/{ts}_{sid}.jsonl"
@@ -94,7 +95,7 @@ async def media_stream(ws: WebSocket) -> None:
                     from session import recording_pending
                     recording_pending[sess.call_sid] = sess.transcript_path
             row = {
-                "ts":    datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z",
+                "ts":    ist_now().isoformat(timespec="milliseconds"),
                 "event": event, "state": sess.state, "sid": sess.call_sid, **fields,
             }
             line = json.dumps(row, ensure_ascii=False)

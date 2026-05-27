@@ -4,10 +4,10 @@ call_webhook.py — Push normalized call-summary payloads to n8n / CRM webhooks.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import Any
 
 from clients import http as http_client
+from utils import ist_now
 
 log = logging.getLogger("aditi")
 
@@ -105,11 +105,7 @@ def build_call_summary_push_body(
     body: dict[str, Any] = {
         "call_sid":      call_sid,
         "hangup_reason": hangup_reason,
-        "ended_at":      (
-            datetime.now(timezone.utc)
-            .isoformat(timespec="milliseconds")
-            .replace("+00:00", "Z")
-        ),
+        "ended_at":      ist_now().isoformat(timespec="milliseconds"),
         "state":         humanize_state(state or cv.pop("state", "") or ""),
         # Deterministic — doesn't need the LLM
         "doing_payment": hangup_reason == "payment_today_confirmed",

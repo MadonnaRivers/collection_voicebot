@@ -353,9 +353,9 @@ async def recording_callback(request: Request) -> JSONResponse:
         log.warning("Recording callback received but no URL found in payload — skipping")
         return JSONResponse({"status": "ok"})
 
-    from datetime import datetime, timezone
+    from utils import ist_now
 
-    ts_str = datetime.now(timezone.utc).isoformat(timespec="milliseconds") + "Z"
+    ts_str = ist_now().isoformat(timespec="milliseconds")
     transcript_path = recording_pending.pop(call_uuid, "")
 
     row = {
@@ -1099,9 +1099,10 @@ async def logs_page() -> HTMLResponse:
     </table>""" if recent_files else '<p style="color:#334155;font-size:13px">No transcript files found.</p>'
 
     # ── server state ──────────────────────────────────────────────────────────
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    from utils import ist_now as _ist_now
+    now = _ist_now().strftime("%Y-%m-%d %H:%M:%S IST")
     state_rows = [
-        ("Time (UTC)", now),
+        ("Time (IST)", now),
         ("pending_ctx keys", str(len(pending_ctx)) + (" — " + ", ".join(list(pending_ctx.keys())[:5]) if pending_ctx else " (empty ✅)")),
         ("recording_pending keys", str(len(recording_pending))),
         ("Transcript files", str(len(list(_Path(TRANSCRIPTS_DIR).glob("*.jsonl")))) if _Path(TRANSCRIPTS_DIR).exists() else "0"),
