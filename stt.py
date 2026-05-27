@@ -16,7 +16,6 @@ import audioop
 import base64
 import io
 import logging
-import time
 import wave
 from typing import Awaitable, Callable
 
@@ -68,11 +67,11 @@ class RestStt:
         self._closed = False
         self._speech_run = 0
         self._speech_start_fired = False
-        self._flush_lock = asyncio.Lock()
         self._connect_lock = asyncio.Lock()
         self._client = AsyncSarvamAI(api_subscription_key=SARVAM_API_KEY)
         self._ws_cm = None
         self._ws = None
+        self._recv_task: asyncio.Task | None = None
 
     async def _ensure_ws(self) -> bool:
         if self._ws is not None:
@@ -95,6 +94,9 @@ class RestStt:
                     kwargs["mode"] = "transcribe"
                 self._ws_cm = self._client.speech_to_text_streaming.connect(**kwargs)
                 self._ws = await self._ws_cm.__aenter__()
+                # Start the single continuous receiver that dispatches
+                # transcripts as they arrive — never block a flush on recv().
+                self._recv_task = asyncio.create_task(self._recv_loop())
                 log.info("[STT] streaming websocket connected")
             except Exception as exc:
                 self._ws = None
@@ -103,10 +105,50 @@ class RestStt:
                 return False
         return True
 
+    async def _recv_loop(self) -> None:
+        """Continuously read the WS and dispatch final transcripts. One per call."""
+        ws = self._ws
+        while not self._closed and ws is not None and ws is self._ws:
+            try:
+                msg = await ws.recv()
+            except Exception as exc:
+                if not self._closed:
+                    log.info("[STT] recv loop ended: %s", exc)
+                break
+            try:
+                msg_type = getattr(msg, "type", None) or (msg.get("type") if isinstance(msg, dict) else None)
+                msg_data = getattr(msg, "data", None) or (msg.get("data") if isinstance(msg, dict) else None)
+                if msg_type == "error":
+                    err = getattr(msg_data, "error", None) or str(msg_data)
+                    log.error("[STT] websocket error: %s", err)
+                    continue
+                if msg_type in ("events", "event"):
+                    continue
+                transcript = (
+                    (getattr(msg_data, "transcript", None) if msg_data is not None else None)
+                    or (msg_data.get("transcript") if isinstance(msg_data, dict) else None)
+                    or getattr(msg, "transcript", None)
+                    or (msg.get("transcript") if isinstance(msg, dict) else None)
+                    or ""
+                ).strip()
+                if not transcript:
+                    continue
+                log.info("[STT] transcribed: %.80s", transcript)
+                try:
+                    await self._on_transcript(transcript)
+                except Exception as exc:
+                    log.error("[STT] on_transcript handler error: %s", exc)
+            except Exception as exc:
+                log.debug("[STT] recv parse error: %s", exc)
+
     async def _close_ws(self) -> None:
         ws_cm = self._ws_cm
         self._ws = None
         self._ws_cm = None
+        task = self._recv_task
+        self._recv_task = None
+        if task is not None and not task.done():
+            task.cancel()
         if ws_cm is None:
             return
         try:
@@ -151,90 +193,39 @@ class RestStt:
                 asyncio.create_task(self._flush())
 
     async def _flush(self) -> None:
-        async with self._flush_lock:
-            if not self._in_speech:
-                return
-            self._in_speech = False
-            self._frames_since_speech = 0
-            self._speech_run = 0
-            self._speech_start_fired = False
-            frames = self._buf
-            self._buf = []
-            if len(frames) < _MIN_FRAMES:
-                return
+        """Send the buffered utterance to the WS and return immediately.
+        Transcripts come back asynchronously via _recv_loop — we never block
+        here waiting for a reply (that was the 6 s stall bug)."""
+        if not self._in_speech:
+            return
+        self._in_speech = False
+        self._frames_since_speech = 0
+        self._speech_run = 0
+        self._speech_start_fired = False
+        frames = self._buf
+        self._buf = []
+        if len(frames) < _MIN_FRAMES:
+            return
 
-            dur_ms = len(frames) * _FRAME_MS
-            pcm = b"".join(frames)
-            try:
-                wav = _pcm8k_to_wav16k(pcm)
-            except Exception as exc:
-                log.error("[STT] wav encode failed: %s", exc)
-                return
+        dur_ms = len(frames) * _FRAME_MS
+        pcm = b"".join(frames)
+        try:
+            wav = _pcm8k_to_wav16k(pcm)
+        except Exception as exc:
+            log.error("[STT] wav encode failed: %s", exc)
+            return
 
-            if not await self._ensure_ws():
-                return
+        if not await self._ensure_ws():
+            return
 
-            log.info("[STT] transcribing — %d ms utterance", dur_ms)
-            t0 = time.monotonic()
-            audio_b64 = base64.b64encode(wav).decode("ascii")
-
-            try:
-                await self._ws.transcribe(audio=audio_b64, encoding="audio/wav", sample_rate=16000)
-                await self._ws.flush()
-            except Exception as exc:
-                log.warning("[STT] websocket send/flush error: %s", exc)
-                await self._close_ws()
-                return
-
-            transcript = ""
-            deadline = time.monotonic() + 6.0
-            while time.monotonic() < deadline:
-                try:
-                    msg = await asyncio.wait_for(self._ws.recv(), timeout=2.0)
-                except asyncio.TimeoutError:
-                    continue
-                except Exception as exc:
-                    log.warning("[STT] websocket recv error: %s", exc)
-                    await self._close_ws()
-                    return
-
-                msg_type = getattr(msg, "type", None) or (msg.get("type") if isinstance(msg, dict) else None)
-                msg_data = getattr(msg, "data", None) or (msg.get("data") if isinstance(msg, dict) else None)
-                if msg_type == "error":
-                    err = getattr(msg_data, "error", None) or str(msg_data)
-                    code = getattr(msg_data, "code", "")
-                    log.error("[STT] websocket error: %s %s", code, err)
-                    break
-                if msg_type in ("events", "event"):
-                    # Ignore speech start/end events in this pull loop.
-                    continue
-                if msg_type == "data":
-                    transcript = (
-                        getattr(msg_data, "transcript", None)
-                        or (msg_data.get("transcript") if isinstance(msg_data, dict) else "")
-                        or ""
-                    ).strip()
-                    break
-                # Compatibility guard: older/newer payload variants may use
-                # direct "transcript" fields without "type":"data".
-                transcript = (
-                    getattr(msg, "transcript", None)
-                    or (msg.get("transcript") if isinstance(msg, dict) else "")
-                    or ""
-                ).strip()
-                if transcript:
-                    break
-
-            latency_ms = int((time.monotonic() - t0) * 1000)
-            if not transcript:
-                log.info("[STT] empty transcript (%d ms)", latency_ms)
-                return
-
-            log.info("[STT] transcribed in %d ms", latency_ms)
-            try:
-                await self._on_transcript(transcript)
-            except Exception as exc:
-                log.error("[STT] on_transcript handler error: %s", exc)
+        log.info("[STT] transcribing — %d ms utterance", dur_ms)
+        audio_b64 = base64.b64encode(wav).decode("ascii")
+        try:
+            await self._ws.transcribe(audio=audio_b64, encoding="audio/wav", sample_rate=16000)
+            await self._ws.flush()
+        except Exception as exc:
+            log.warning("[STT] websocket send/flush error: %s", exc)
+            await self._close_ws()
 
     async def close(self) -> None:
         self._closed = True
