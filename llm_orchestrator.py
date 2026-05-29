@@ -104,13 +104,9 @@ NOTE: DISPUTED LOAN — ग्राहक कहे "मेरा कोई loa
 call_phase="disputed_loan", end_call=true, hangup_reason="disputed_loan"।
 
 [Global रूल्स]
-- NOTE: PARTIAL PAYMENT — bot कभी अपनी तरफ से partial offer नहीं करेगा।
-  Partial flow सिर्फ तब trigger होगा जब ग्राहक खुद किसी specific amount का mention करे
-  कि वे आज इतना दे सकते हैं (e.g. "2000 दे सकता हूँ", "1500 अभी देता हूँ")।
-  कभी मत कहें: "आप partial payment कर सकते हैं" / "कुछ amount दे सकते हैं?" / "minimum ₹1500"
-  — जब तक ग्राहक खुद amount propose न करे।
-- Partial minimum ₹1500 — सिर्फ validation के लिए (जब customer ने amount बताया हो)।
-  ₹1500 से कम → reject, amount store न करें।
+- NOTE: PARTIAL PAYMENT — अगर ग्राहक partial payment, थोड़ा amount, "consider",
+  या similar intent बोले, partial flow trigger करें।
+- Partial flow में कोई minimum amount rule नहीं है। ₹1500 जैसी कोई threshold/validation apply न करें।
 - 90-day window हर future payment date पर apply होता है:
   Allowed: CURRENT_DATE_ISO से LAST_VALID_ISO तक (= DUE_ANCHOR_ISO + 90 days)।
   LAST_VALID_ISO के बाद की कोई भी date → reject।
@@ -245,27 +241,14 @@ _FLOW_SPEC = """\
    NOTE: cannot_pay का end line चाहे जो भी हो, CIBIL/credit score warning हमेशा include करो।
    NOTE: cannot_pay_reason store किए बिना call close न करें।
 
-5) partial — NOTE: trigger ONLY जब ग्राहक खुद specific amount propose करे
-   (e.g. "2000 दे सकता हूँ", "1500 अभी देता हूँ", "I can pay 3000 today")।
-   Bot कभी अपनी तरफ से partial नहीं उठाएगा। cannot_pay से अपने आप partial में मत जाएँ।
+5) partial — ग्राहक partial payment की बात करे (amount specific हो या न हो)
+   तो तुरंत partial flow close करें। minimum amount rule नहीं लगाना, ₹1500 rule नहीं लगाना,
+   और remainder date/target_date नहीं पूछना।
 
-   Turn A — amount validate करें:
-     - amount < 1500 → reject:
-       "Sorry, minimum ₹1500 है। ₹1500 या उससे ज़्यादा दे सकते हैं?"
-       amount store न करें। end_call=false, call_phase="partial"।
-       अगर ग्राहक दोबारा ₹1500 से कम पर अड़े रहें → cannot_pay flow में चले जाएँ।
-     - amount ≥ 1500 → context_patch.partial_amount = "<exact rupee number ग्राहक ने बताया>"।
-       पूछें: "Okay, बाकी amount कब तक pay कर देंगे?"
-       end_call=false, call_phase="partial"। target_date अभी store न करें।
-
-   Turn B — remainder date मिले → 90-day window check:
-     - date ≤ LAST_VALID_ISO → accept। context_patch.target_date = YYYY-MM-DD।
-       Closing (exact):
-         "Thank you [NAME] जी। Payment के लिए SMS में भेजे गए link का use कीजिए।
-          [TARGET_DATE] तक payment पूरा कर दीजिए ताकि आपका credit score safe रहे।
-          आपका दिन शुभ हो।"
-       call_phase="partial", end_call=true, hangup_reason="partial_confirmed"।
-     - date > LAST_VALID_ISO → reject (DATE WINDOW section की line)। end_call=false।
+   Closing (exact):
+     "ठीक है [NAME] जी, payment के लिए इस call के बाद भेजे गए payment link का use कीजिए।
+      कृपया EMI जल्द से जल्द pay कर दीजिए ताकि penalty charges से बचें, आपका दिन शुभ हो।"
+   call_phase="partial", end_call=true, hangup_reason="partial_confirmed"।
 
 6) already_paid — ग्राहक कहे कि पहले ही pay कर चुके हैं
    Goal: payment date + payment mode दोनों collect करना। एक turn में एक slot।
@@ -347,14 +330,14 @@ def _hard_date_block(ctx: dict[str, str]) -> str:
     last_human    = last_d.strftime("%d %b %Y")
     anchor_human  = anchor_d.strftime("%d %b %Y")
     return (
-        "\n--- DATE WINDOW (PTP और partial remainder dates पर apply होता है) ---\n"
+        "\n--- DATE WINDOW (PTP dates पर apply होता है) ---\n"
         f"DUE_ANCHOR_ISO   : {anchor_d.isoformat()}  ({anchor_human})\n"
         f"                   ← source: {anchor_source}\n"
         f"LAST_VALID_ISO   : {last_d.isoformat()}  ({last_human})\n"
         f"                   ← यही maximum allowed date है (= DUE_ANCHOR + 90 days)।\n"
         f"CURRENT_DATE_ISO : {today.isoformat()}\n"
         "\n"
-        "हर PTP / partial-remainder date इस rule से check करें:\n"
+        "हर PTP date इस rule से check करें:\n"
         f"  • customer's target_date ≤ {last_d.isoformat()}  → ACCEPT, store, close।\n"
         f"  • customer's target_date >  {last_d.isoformat()}  → REJECT (2-step नीचे)।\n"
         "\n"
@@ -666,12 +649,10 @@ def _maybe_rescue_in_window_date(
     )
     name = ctx.get("customer_name", "") or ""
     name_prefix = f"{name} जी" if name else "जी"
-    target_human = parsed.strftime("%d %b %Y")
     if phase == "partial":
         closing = (
-            f"Thank you {name_prefix}। Payment के लिए SMS में भेजे गए link का use कीजिए। "
-            f"{target_human} तक payment पूरा कर दीजिए ताकि आपका credit score safe रहे। "
-            "आपका दिन शुभ हो।"
+            f"ठीक है {name_prefix}, payment के लिए इस call के बाद भेजे गए payment link का use कीजिए। "
+            "कृपया EMI जल्द से जल्द pay कर दीजिए ताकि penalty charges से बचें, आपका दिन शुभ हो।"
         )
         hangup = "partial_confirmed"
     else:
@@ -690,7 +671,8 @@ def _maybe_rescue_in_window_date(
         if k == "out_of_window_attempts":
             continue
         new_patch[str(k)] = str(v)
-    new_patch["target_date"] = parsed.isoformat()
+    if phase != "partial":
+        new_patch["target_date"] = parsed.isoformat()
 
     return {
         "say":           closing,
@@ -721,6 +703,30 @@ def _enforce_ptp_no_date_closing(
         f"ठीक है {name_prefix}, मैंने note कर लिया है। please जल्द से जल्द अपनी "
         "overdue EMI pay कर दीजिए ताकि penalty charges से बचें और आपका "
         "CIBIL score safe रहे। आपका दिन शुभ हो।"
+    )
+    return dict(result, say=fixed)
+
+
+def _enforce_partial_closing(
+    result: dict[str, Any],
+    ctx: dict[str, str],
+) -> dict[str, Any]:
+    """
+    Deterministic: a confirmed partial closing must NOT speak any amount, date,
+    or ₹1500-style minimum. We force the canonical "payment link forwarded"
+    closing while preserving partial_amount in context_patch (CRM still gets
+    it if the customer named a specific amount).
+    """
+    if result.get("hangup_reason") != "partial_confirmed":
+        return result
+    if not result.get("end_call"):
+        return result
+    name = (ctx.get("customer_name") or "").strip()
+    name_prefix = f"{name} जी" if name else "जी"
+    fixed = (
+        f"ठीक है {name_prefix}, इस call के बाद आपको payment link भेज दिया जाएगा। "
+        "please जल्द से जल्द अपनी EMI pay कर दीजिए ताकि penalty charges से बचें। "
+        "आपका दिन शुभ हो।"
     )
     return dict(result, say=fixed)
 
@@ -828,6 +834,9 @@ _HANGUP_TO_PHASE: dict[str, str] = {
     "partial_confirmed":        "partial",
     "no_response":              "no_response",
     "cannot_pay_acknowledged":  "cannot_pay",
+    "disputed_loan":            "disputed_loan",
+    "voicemail":                "voicemail",
+    "voicemail_left":           "voicemail",
     "orchestrator_failure":     "error",
 }
 
@@ -903,6 +912,8 @@ async def run_conversation_turn(
         result = _maybe_rescue_in_window_date(result, user_message, ctx)
         # PTP closing must never speak the date — enforce canonical wording.
         result = _enforce_ptp_no_date_closing(result, ctx)
+        # Partial closing must never speak amount / date / ₹1500 rule.
+        result = _enforce_partial_closing(result, ctx)
         return result
 
     last_exc: BaseException | None = None
@@ -1027,7 +1038,18 @@ async def stream_conversation_turn(
         def _should_defer_say(text: str) -> bool:
             if ("valid नहीं" in text) or ("इतनी देर" in text):
                 return True
-            return any(m in text for m in _MONTHS)
+            if any(m in text for m in _MONTHS):
+                return True
+            # Partial improvisation guard: if the LLM is closing partial flow
+            # and slips in an amount / minimum-rule wording, defer so the
+            # _enforce_partial_closing net can rewrite to the canonical line.
+            partial_smells = (
+                "₹", "रुपये", "minimum", "1500", "बाकी amount", "remainder",
+                "partial_amount",
+            )
+            if any(s in text for s in partial_smells):
+                return True
+            return False
 
         async for chunk in stream:
             delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
@@ -1065,6 +1087,8 @@ async def stream_conversation_turn(
         result = _maybe_rescue_in_window_date(result, user_message, ctx)
         # PTP closing must never speak the date — enforce canonical wording.
         result = _enforce_ptp_no_date_closing(result, ctx)
+        # Partial closing must never speak amount / date / ₹1500 rule.
+        result = _enforce_partial_closing(result, ctx)
 
         # Fire on_say if not already fired (deferred date-bearing say, or regex
         # never matched). Uses the FINAL corrected say.

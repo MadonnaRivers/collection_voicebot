@@ -245,7 +245,18 @@ async def make_call(
         log.debug("pending_ctx TTL eviction (5 min stale): %s", k)
 
     ctx["_inserted_at"] = str(_now)   # timestamp for future TTL checks
-    call_sid = await carrier.make_call(to, f"{NGROK_URL}/outgoing-call")
+    from config import (
+        AMD_ENABLED, AMD_CALLBACK_URL, AMD_DETECTION_TIME_MS,
+        HANGUP_CALLBACK_URL,
+    )
+    amd_url = AMD_CALLBACK_URL if AMD_ENABLED else ""
+    call_sid = await carrier.make_call(
+        to,
+        f"{NGROK_URL}/outgoing-call",
+        amd_callback_url=amd_url,
+        amd_detection_time_ms=AMD_DETECTION_TIME_MS,
+        hangup_url=HANGUP_CALLBACK_URL,
+    )
     pending_ctx[call_sid] = ctx
 
     # Hard-cap at 1000 (handles 100+ concurrent batches with headroom).
@@ -289,6 +300,199 @@ async def outgoing_call(request: Request) -> HTMLResponse:
 @app.websocket("/media-stream")
 async def media_stream_route(ws: WebSocket) -> None:
     await media_stream(ws)
+
+
+@app.api_route("/amd-callback", methods=["GET", "POST"])
+async def amd_callback(request: Request) -> JSONResponse:
+    """
+    Plivo posts here when async AMD detects an answering machine.
+
+    Per Plivo docs, the callback ONLY fires for machine-detected calls
+    (humans never trigger it). The primary field is `Machine` (true/false);
+    some payloads also include `AmdStatus`. We accept either.
+
+    Sample body:
+      From=...&To=...&Machine=true&CallUUID=...&Event=MachineDetection
+      &CallStatus=in-progress
+
+    The verdict is stored in session.amd_results keyed by CallUUID; the
+    media-stream handler polls this map and switches to voicemail mode
+    the moment a machine verdict shows up.
+    """
+    from session import amd_results
+    try:
+        form_data = await request.form()
+        form = dict(form_data)
+    except Exception:
+        form = {}
+    # Also accept query-string for GET callbacks
+    if not form:
+        form = dict(request.query_params)
+
+    call_uuid = (form.get("CallUUID") or "").strip()
+    machine   = (form.get("Machine") or "").strip().lower()
+    amd_stat  = (form.get("AmdStatus") or "").strip().lower()
+    event     = (form.get("Event") or "").strip()
+    if not call_uuid:
+        log.warning("[AMD] callback with no CallUUID: %s", form)
+        return JSONResponse({"ok": False, "error": "missing CallUUID"}, status_code=400)
+
+    # Plivo signals 'machine' either via Machine=true OR via an AmdStatus
+    # value that starts with 'machine'. Treat fax as machine too.
+    is_machine = (
+        machine in ("true", "1", "yes")
+        or amd_stat.startswith("machine")
+        or amd_stat == "fax"
+    )
+    verdict = "machine" if is_machine else (amd_stat or "human")
+    amd_results[call_uuid] = verdict
+    log.info("[AMD] %s → %s  (Machine=%r AmdStatus=%r Event=%r)",
+             call_uuid, verdict, machine or "-", amd_stat or "-", event or "-")
+    # TTL cap — keep at most 2000 entries to bound memory in long runs.
+    if len(amd_results) > 2000:
+        amd_results.pop(next(iter(amd_results)), None)
+    return JSONResponse({"ok": True})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# /call-hangup — fires for EVERY call when it ends. Captures the no-pickup
+# cases (busy, rejected, no_answer) which never connect a media-stream and
+# therefore never produce a transcript via call_handler. For connected calls,
+# call_handler has already written a JSONL — we skip those.
+# ─────────────────────────────────────────────────────────────────────────────
+# Plivo HangupCause → our hangup_reason (also feeds /transcripts badge style).
+_PLIVO_CAUSE_MAP: dict[str, tuple[str, str]] = {
+    # cause                       -> (hangup_reason, one-line summary template)
+    "NO_ANSWER":                  ("no_answer",       "Customer did not pick up the call."),
+    "USER_BUSY":                  ("busy",            "Customer's line was busy."),
+    "CALL_REJECTED":              ("rejected",        "Customer rejected the call."),
+    "UNALLOCATED_NUMBER":         ("invalid_number",  "Number is invalid or unallocated."),
+    "INVALID_NUMBER_FORMAT":      ("invalid_number",  "Number format invalid."),
+    "INCOMPATIBLE_DESTINATION":   ("invalid_number",  "Destination incompatible / unreachable."),
+    "NORMAL_TEMPORARY_FAILURE":   ("network_failure", "Temporary network failure routing the call."),
+    "RECOVERY_ON_TIMER_EXPIRE":   ("network_failure", "Call routing timed out."),
+    "SUBSCRIBER_ABSENT":          ("no_answer",       "Subscriber unreachable."),
+    "ORIGINATOR_CANCEL":          ("cancelled",       "Caller cancelled the call before answer."),
+    "ALLOTTED_TIMEOUT":           ("no_answer",       "Call ringed out without answer."),
+    "INTERWORKING":               ("network_failure", "Carrier interworking failure."),
+}
+
+
+@app.api_route("/call-hangup", methods=["GET", "POST"])
+async def call_hangup(request: Request) -> JSONResponse:
+    """Plivo posts here when every call ends. We write a synthetic transcript
+    ONLY if the call never connected (no JSONL exists for this CallUUID)."""
+    import json as _json
+    from pathlib import Path as _Path
+    from utils import ist_now
+    from config import TRANSCRIPTS_DIR
+
+    try:
+        form = dict(await request.form())
+    except Exception:
+        form = {}
+    if not form:
+        form = dict(request.query_params)
+
+    call_uuid    = (form.get("CallUUID")    or "").strip()
+    call_status  = (form.get("CallStatus")  or "").strip()
+    hangup_cause = (form.get("HangupCause") or "").strip().upper()
+    hangup_src   = (form.get("HangupSource") or "").strip()
+    duration_s   = int((form.get("Duration") or "0") or 0)
+    to_number    = (form.get("To") or "").strip()
+
+    if not call_uuid:
+        log.warning("[HANGUP] callback with no CallUUID: %s", form)
+        return JSONResponse({"ok": False, "error": "missing CallUUID"}, status_code=400)
+
+    log.info("[HANGUP] %s — CallStatus=%r HangupCause=%r duration=%ds source=%r",
+             call_uuid, call_status, hangup_cause, duration_s, hangup_src or "-")
+
+    # If call_handler already produced a JSONL for this CallUUID → call connected,
+    # transcript exists. Do nothing (avoids duplicate rows on /transcripts).
+    tx_dir = _Path(TRANSCRIPTS_DIR)
+    existing = list(tx_dir.glob(f"*_{call_uuid}.jsonl")) if tx_dir.exists() else []
+    if existing:
+        log.info("[HANGUP] transcript already exists (%s) — connected call, skipping synth",
+                 existing[0].name)
+        return JSONResponse({"ok": True, "skipped": "transcript_exists"})
+
+    # Map cause → reason + summary
+    reason, summary = _PLIVO_CAUSE_MAP.get(hangup_cause, ("", ""))
+    if not reason:
+        # CallStatus fallback for cases Plivo doesn't tag with a known cause.
+        cs = call_status.lower()
+        if cs == "no-answer":
+            reason, summary = "no_answer", "Customer did not pick up the call."
+        elif cs == "busy":
+            reason, summary = "busy", "Customer's line was busy."
+        elif cs == "failed":
+            reason, summary = "network_failure", f"Call failed ({hangup_cause or 'unknown cause'})."
+        elif cs == "cancelled":
+            reason, summary = "cancelled", "Call cancelled before answer."
+        else:
+            reason  = "no_pickup"
+            summary = f"Call ended without connect ({hangup_cause or call_status or 'unknown'})."
+
+    # Pull customer info from pending_ctx (still there for unanswered calls,
+    # because call_handler.media_stream never ran to pop it).
+    ctx = pending_ctx.pop(call_uuid, {}) or {}
+
+    # Write a synthetic transcript JSONL so /transcripts shows the attempt.
+    try:
+        tx_dir.mkdir(parents=True, exist_ok=True)
+        ts_file = ist_now().strftime("%Y%m%d_%H%M%S_%f")
+        path = tx_dir / f"{ts_file}_{call_uuid.replace('/', '_')}.jsonl"
+        ts_iso = ist_now().isoformat(timespec="milliseconds")
+        rows = [
+            {
+                "ts": ts_iso, "event": "call_start", "state": "no_pickup", "sid": call_uuid,
+                "phone":    ctx.get("phone_number", "") or to_number,
+                "customer": ctx.get("customer_name", ""),
+                "loan_id":  ctx.get("loan_id", ""),
+                "emi":      ctx.get("emi_overdue_amt") or ctx.get("emi_amount", ""),
+                "emi_date": ctx.get("emi_overdue_date") or ctx.get("emi_due_date", ""),
+            },
+            {
+                "ts": ts_iso, "event": "hangup", "state": "no_pickup", "sid": call_uuid,
+                "reason": reason,
+                "plivo_cause":   hangup_cause,
+                "plivo_status":  call_status,
+                "duration_sec":  duration_s,
+            },
+            {
+                "ts": ts_iso, "event": "call_summary", "state": "no_pickup", "sid": call_uuid,
+                "summary": summary,
+            },
+        ]
+        with open(path, "a", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(_json.dumps(row, ensure_ascii=False) + "\n")
+        log.info("[HANGUP] synthetic transcript written: %s (reason=%s)", path.name, reason)
+    except OSError as exc:
+        log.warning("[HANGUP] could not write synthetic transcript: %s", exc)
+
+    # Push the no-pickup signal to the CRM webhook so retry workflows see it.
+    try:
+        from call_webhook import (
+            build_call_summary_push_body, push_call_summary_webhook,
+        )
+        from config import CALL_SUMMARY_WEBHOOK_URL
+        if CALL_SUMMARY_WEBHOOK_URL:
+            wh_body = build_call_summary_push_body(
+                call_uuid, reason, {"summary": summary}, ctx=ctx, state="no_pickup",
+            )
+            wh_body["plivo_cause"]  = hangup_cause
+            wh_body["plivo_status"] = call_status
+            wh_body["duration_sec"] = duration_s
+            await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
+        # NOTE: trigger webhook is NOT fired from this no-pickup path.
+        # `reason` here is always no_answer / busy / rejected / etc — the
+        # customer never spoke, so by definition they didn't agree to pay.
+    except Exception as exc:
+        log.warning("[HANGUP] CRM webhook push failed: %s", exc)
+
+    return JSONResponse({"ok": True, "reason": reason})
 
 
 @app.api_route("/recording-callback", methods=["GET", "POST"])
@@ -403,8 +607,11 @@ async def recording_callback(request: Request) -> JSONResponse:
     # We merge the call-summary body saved at hangup (recordings/<sid>.summary.json)
     # with the recording-ready fields, so n8n gets ONE consolidated event
     # containing every input ctx field + classifier output + recording URL.
-    from config import CALL_SUMMARY_WEBHOOK_URL
-    from call_webhook import push_call_summary_webhook
+    from config import CALL_SUMMARY_WEBHOOK_URL, TRIGGER_WEBHOOK_URL
+    from call_webhook import (
+        push_call_summary_webhook, build_trigger_envelope, push_trigger_webhook,
+        trigger_code_for_hangup,
+    )
     if CALL_SUMMARY_WEBHOOK_URL and call_uuid:
         rec_start_ms  = data.get("recording_start_ms", "")
         rec_end_ms    = data.get("recording_end_ms",   "")
@@ -446,6 +653,21 @@ async def recording_callback(request: Request) -> JSONResponse:
             "Combined summary+recording pushed to push_data webhook — call=%s "
             "(fields=%d)", call_uuid, len(wh_body),
         )
+
+        # Secondary trigger envelope — fires ONLY for payment-positive
+        # outcomes (agrees to pay today / PTP / partial). Skipped silently
+        # for cannot_pay, already_paid, deceased, disputed_loan, no_response,
+        # voicemail and all carrier-side hangups.
+        if TRIGGER_WEBHOOK_URL:
+            trig_code = trigger_code_for_hangup(wh_body.get("hangup_reason", ""))
+            if trig_code:
+                trig = build_trigger_envelope(wh_body, trigger_code=trig_code)
+                await push_trigger_webhook(TRIGGER_WEBHOOK_URL, trig)
+            else:
+                log.debug(
+                    "Trigger webhook skipped — hangup_reason=%r not payment-positive",
+                    wh_body.get("hangup_reason"),
+                )
 
     # ── 4. Download Plivo MP3 and push to audio_and_transcripts webhook ────────
     # Run as a background task so the callback returns immediately to Plivo.
@@ -555,6 +777,7 @@ _OUTCOME_STYLE: dict[str, tuple[str, str, str]] = {
     "payment_confirm":        ("Paid Today",     "#d1fae5", "#065f46"),
     "partial_confirmed":      ("Partial",        "#dbeafe", "#1d4ed8"),
     "partial":                ("Partial",        "#dbeafe", "#1d4ed8"),
+    "cannot_pay_acknowledged":("Cannot Pay",     "#fee2e2", "#b91c1c"),
     "cannot_pay_callback":    ("Cannot Pay",     "#fee2e2", "#b91c1c"),
     "cannot_pay":             ("Cannot Pay",     "#fee2e2", "#b91c1c"),
     "callback_scheduled":     ("Callback",       "#ede9fe", "#6d28d9"),
@@ -562,12 +785,24 @@ _OUTCOME_STYLE: dict[str, tuple[str, str, str]] = {
     "already_paid_noted":     ("Already Paid",   "#fef9c3", "#854d0e"),
     "already_paid":           ("Already Paid",   "#fef9c3", "#854d0e"),
     "deceased":               ("Deceased",       "#f1f5f9", "#475569"),
+    "disputed_loan":          ("Disputed Loan",  "#ffedd5", "#9a3412"),
     "no_response":            ("No Response",    "#f1f5f9", "#64748b"),
     "silence_timeout":        ("No Response",    "#f1f5f9", "#64748b"),
     "orchestrator_failure":   ("Error",          "#fee2e2", "#b91c1c"),
     "carrier_disconnect":     ("Disconnected",   "#f1f5f9", "#64748b"),
     "no_answer":              ("Didn't Pick Up", "#fef9c3", "#854d0e"),
+    "no_pickup":              ("Didn't Pick Up", "#fef9c3", "#854d0e"),
+    "busy":                   ("Busy",           "#fed7aa", "#9a3412"),
+    "rejected":               ("Rejected",       "#fecaca", "#991b1b"),
+    "invalid_number":         ("Invalid Number", "#fecdd3", "#9f1239"),
+    "network_failure":        ("Network Failure","#fee2e2", "#b91c1c"),
+    "cancelled":              ("Cancelled",      "#f1f5f9", "#64748b"),
     "disconnected_mid_call":  ("Dropped Midcall","#fee2e2", "#b91c1c"),
+    "voicemail_left":         ("Voicemail Left", "#e0e7ff", "#3730a3"),
+    "voicemail":              ("Voicemail",      "#e0e7ff", "#3730a3"),
+    "max_turns":              ("Max Turns",      "#f1f5f9", "#475569"),
+    "llm_terminal":           ("Ended",          "#f1f5f9", "#475569"),
+    "unexpected_disconnect":  ("Disconnected",   "#f1f5f9", "#64748b"),
 }
 
 def _outcome_badge(raw: str, size: str = "sm") -> str:

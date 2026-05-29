@@ -28,14 +28,15 @@ from config import (
     DENOISE_ENABLED, DENOISE_STRENGTH, DENOISE_PROFILE_SEC, DENOISE_STATIONARY,
     HANGUP_GRACE_SEC, SILENCE_TIMEOUT_SEC, BARGE_IN_GUARD_SEC,
     TRANSCRIPTS_DIR, RECORDING_CALLBACK_URL,
+    AMD_ENABLED, AMD_WAIT_MS, AMD_LEAVE_MESSAGE, AMD_BEEP_WAIT_MS,
 )
 from classifier import finalize_call_variables
 from call_webhook import build_call_summary_push_body
 from denoiser import StreamDenoiser
 from llm_orchestrator import stream_conversation_turn, conversation_to_storage_text
-from scripts import build_opening_greeting
+from scripts import build_opening_greeting, build_voicemail_message
 from utils import ist_now
-from session import CallSession, pending_ctx
+from session import CallSession, pending_ctx, amd_results
 from stt import RestStt
 from tts import tts_speak
 
@@ -206,6 +207,19 @@ async def media_stream(ws: WebSocket) -> None:
             text = text.strip()
             if not text or sess.done or sess._hangup_started or not sess.stream_sid:
                 return
+            # If a prior TTS is still in flight (e.g. greeting being aborted
+            # mid-stream so we can switch to the voicemail line), WAIT for it
+            # to actually exit before resetting abort[0]. Otherwise resetting
+            # the flag here un-aborts the prior stream and both end up pushing
+            # audio bytes concurrently → the "cracked" interleaved voice.
+            if sess.speaking:
+                abort[0] = True  # signal any prior tts loop to stop NOW
+                _wait_start = time.monotonic()
+                while sess.speaking and not sess.done and not sess._hangup_started:
+                    if time.monotonic() - _wait_start > 1.5:
+                        log.warning("[TTS] prior speech didn't exit in 1.5s; proceeding anyway")
+                        break
+                    await asyncio.sleep(0.02)
             # Closing line → no barge-in while the goodbye plays.
             if any(m in text for m in _CLOSING_MARKERS):
                 sess.closing_in_progress = True
@@ -250,6 +264,59 @@ async def media_stream(ws: WebSocket) -> None:
             await speak(opening_text)
             sess.llm_history.append({"role": "assistant", "content": opening_text})
 
+        # One-shot guard so AMD-callback and STT-phrase fallback can't double-fire.
+        _voicemail_fired = [False]
+
+        async def _speak_voicemail() -> None:
+            """Speak the voicemail message and end the call. No LLM loop.
+
+            Critical: wait AMD_BEEP_WAIT_MS first so our message lands AFTER
+            the voicemail's own greeting + beep. Speaking too early means the
+            first half of the message is heard by the voicemail (not recorded)
+            and the customer only gets a half-message on playback.
+            """
+            if _voicemail_fired[0]:
+                return
+            _voicemail_fired[0] = True
+            sess.state = "voicemail"
+            log.info("[AMD] voicemail mode — aborting greeting, waiting %d ms for beep",
+                     AMD_BEEP_WAIT_MS)
+            # Stop any in-flight greeting NOW so the customer's voicemail greeting
+            # plays cleanly (without our voice overlapping it).
+            abort[0] = True
+            await send_clear()
+            # Pre-beep silence — let the voicemail's greeting + beep complete.
+            await asyncio.sleep(AMD_BEEP_WAIT_MS / 1000.0)
+            if sess.done or sess._hangup_started:
+                return
+            text = build_voicemail_message(sess.ctx)
+            log.info("[AMD] beep wait done — speaking voicemail message")
+            record("voicemail_attempt", text=text)
+            # Use speak() so closing-marker logic suppresses barge-in mid-message.
+            await speak(text)
+            sess.llm_history.append({"role": "assistant", "content": text})
+            asyncio.create_task(hangup("voicemail_left"))
+
+        async def _amd_monitor() -> None:
+            """Poll session.amd_results for a 'machine' verdict for up to
+            AMD_MONITOR_SEC seconds. Plivo's AMD callback fires ONLY when
+            it detects a machine (humans never trigger it), so the absence
+            of a verdict is treated as 'probably human' — we don't wait for
+            it before greeting."""
+            if not AMD_ENABLED:
+                return
+            deadline = time.monotonic() + 8.0   # cover Plivo's 3-5s detection window
+            while time.monotonic() < deadline and not sess.done and not _voicemail_fired[0]:
+                v = amd_results.get(sess.call_sid, "")
+                if v == "machine":
+                    log.info("[AMD] mid-call machine verdict — switching to voicemail")
+                    if AMD_LEAVE_MESSAGE:
+                        await _speak_voicemail()
+                    else:
+                        asyncio.create_task(hangup("voicemail"))
+                    return
+                await asyncio.sleep(0.1)
+
         # ── Barge-in (driven by sustained VAD speech-start) ─────────────────
         def _barge_in_allowed() -> bool:
             return sess.opening_complete and not sess.closing_in_progress
@@ -261,10 +328,48 @@ async def media_stream(ws: WebSocket) -> None:
             log.info("[STT] speech detected")
             return
 
+        # ── Voicemail-by-STT fallback ──────────────────────────────────────
+        # When Plivo AMD misses (no callback, slow callback, or unsupported on
+        # the plan), the voicemail's own greeting gets transcribed by Sarvam.
+        # Detecting a "voicemail / leave a message / forwarded / not available"
+        # phrase in the early transcripts is the most reliable signal we have.
+        _VOICEMAIL_PHRASES = (
+            # English / transliterated (Sarvam often returns these as Devanagari)
+            "voice mail", "voicemail", "वॉइस मेल", "वॉइसमेल", "वॉयस मेल", "वॉयसमेल",
+            "leave a message", "leave a voicemail", "leave your message",
+            "after the beep", "after the tone", "बीप के बाद", "बीप क बाद",
+            "forwarded to voicemail", "फॉरवर्डेड टू वॉइस", "फॉरवर्ड टू वॉइस",
+            "not available", "उपलब्ध नहीं", "उपलब्ध नही",
+            "is unable to take", "cannot take your call", "can't take your call",
+            "please record your message", "रिकॉर्ड your message",
+            "powered by google", "automated voice",
+            # Hindi carrier voicemail phrases
+            "व्यस्त है", "उत्तर नहीं", "जवाब नहीं दे रहे",
+            "आपका संदेश", "संदेश छोड़", "संदेश रिकॉर्ड",
+        )
+
+        def _looks_like_voicemail(text: str) -> bool:
+            low = text.lower()
+            return any(p.lower() in low for p in _VOICEMAIL_PHRASES)
+
         async def on_transcript(text: str) -> None:
             text = (text or "").strip()
             if not text or sess.done or text == sess.last_queued:
                 return
+
+            # STT-side voicemail catch — fires only once (gated by
+            # _voicemail_fired which is shared with the AMD monitor).
+            if (not _voicemail_fired[0]
+                    and not sess._hangup_started
+                    and not sess.done
+                    and len(sess.llm_history) <= 1   # only opening so far
+                    and _looks_like_voicemail(text)):
+                log.info("[AMD/STT] voicemail phrase detected in transcript — "
+                         "switching to voicemail mode: %.80s", text)
+                # _speak_voicemail flips _voicemail_fired itself
+                asyncio.create_task(_speak_voicemail())
+                return
+
             log.info("[USER] %s", text)
             sess.last_queued = text
             sess.barge_in_active = False
@@ -354,15 +459,21 @@ async def media_stream(ws: WebSocket) -> None:
                                 _carrier.start_recording(sess.call_sid, RECORDING_CALLBACK_URL)
                             )
 
-                        # Fire opening greeting from call_start handler — avoids
-                        # the LLM-loop poll lag (saves 50-150 ms before first audio).
+                        # Fire opening greeting IMMEDIATELY for humans (Plivo's
+                        # AMD callback only fires for machines — humans never
+                        # trigger it, so waiting upfront would just delay every
+                        # real call). The AMD monitor runs in parallel; if a
+                        # machine verdict arrives within ~8 s, it aborts the
+                        # greeting and switches to voicemail mode.
                         if not sess.greeting_sent:
                             sess.greeting_sent = True
                             sess.state = "opening"
                             opening_text = build_opening_greeting(sess.ctx)
-                            record("llm_turn", call_phase="opening", end_call=False,
-                                   hangup_reason="", context_patch={})
+                            record("llm_turn", call_phase="opening",
+                                   end_call=False, hangup_reason="",
+                                   context_patch={})
                             asyncio.create_task(_speak_opening(opening_text))
+                            asyncio.create_task(_amd_monitor())
 
                     elif evt_type == "audio_frame":
                         if sess.done:

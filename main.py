@@ -29,7 +29,11 @@ log = logging.getLogger("aditi")
 
 # Import app + config after logging is set up
 from routes import app
-from config import NGROK_URL, PORT
+from config import (
+    NGROK_URL, PORT,
+    AMD_ENABLED, AMD_CALLBACK_URL, AMD_DETECTION_TIME_MS,
+    HANGUP_CALLBACK_URL,
+)
 from scripts import build_default_ctx
 from session import pending_ctx
 
@@ -37,7 +41,14 @@ from session import pending_ctx
 def _place_call(to: str, ctx: dict) -> str:
     import asyncio
     import carrier as _carrier
-    call_sid = asyncio.run(_carrier.make_call(to, f"{NGROK_URL}/outgoing-call"))
+    amd_url = AMD_CALLBACK_URL if AMD_ENABLED else ""
+    call_sid = asyncio.run(_carrier.make_call(
+        to,
+        f"{NGROK_URL}/outgoing-call",
+        amd_callback_url=amd_url,
+        amd_detection_time_ms=AMD_DETECTION_TIME_MS,
+        hangup_url=HANGUP_CALLBACK_URL,
+    ))
     pending_ctx[call_sid] = ctx
     log.info("Call SID: %s", call_sid)
     return call_sid

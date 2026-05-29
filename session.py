@@ -11,6 +11,13 @@ pending_ctx: dict[str, dict[str, str]] = {}
 # Optional callback map (kept for compatibility with recording-callback route).
 recording_pending: dict[str, str] = {}
 
+# Async AMD (Answering Machine Detection) results keyed by Plivo CallUUID.
+# Populated by /amd-callback when Plivo posts back its verdict. Consumed by
+# call_handler.media_stream to decide voicemail vs. human-call flow.
+# Values: "human" | "machine_start" | "machine_end_beep" | "machine_end_silence"
+#         | "machine_end_other" | "fax" | "unknown" | other strings.
+amd_results: dict[str, str] = {}
+
 @dataclasses.dataclass
 class CallSession:
     ctx:             dict[str, str]  # customer data + dynamic per-turn values

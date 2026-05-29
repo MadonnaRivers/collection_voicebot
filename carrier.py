@@ -31,22 +31,50 @@ _AUTH = (PLIVO_AUTH_ID, PLIVO_AUTH_TOKEN)
 # ─────────────────────────────────────────────────────────────────────────────
 # Outbound call
 # ─────────────────────────────────────────────────────────────────────────────
-async def make_call(to: str, webhook_url: str) -> str:
+async def make_call(
+    to: str,
+    webhook_url: str,
+    amd_callback_url: str = "",
+    amd_detection_time_ms: int = 2000,
+    hangup_url: str = "",
+) -> str:
     """
     Initiate an outbound call via Plivo REST API.
     Returns the request_uuid (used as a temporary key until CallUUID is known).
     The routes.py /outgoing-call handler rekeys pending_ctx to the real CallUUID.
+
+    If `amd_callback_url` is provided, Plivo runs async AMD (Answering Machine
+    Detection) in parallel with the call — humans connect immediately, and
+    the detection verdict ("human" / "machine_*") is POSTed to that URL.
+
+    If `hangup_url` is provided, Plivo POSTs the final call status there when
+    the call ends — including no-answer / busy / rejected cases that never
+    connected (no media-stream, no transcript otherwise).
     """
+    payload: dict = {
+        "from":          PLIVO_PHONE_NUMBER,
+        "to":            to,
+        "answer_url":    webhook_url,
+        "answer_method": "POST",
+    }
+    if hangup_url:
+        payload["hangup_url"]    = hangup_url
+        payload["hangup_method"] = "POST"   # Plivo's actual param name (not hangup_url_method)
+        log.info("[HANGUP] callback enabled — %s", hangup_url)
+    if amd_callback_url:
+        payload.update({
+            "machine_detection":         "true",
+            "machine_detection_time":    str(amd_detection_time_ms),
+            "machine_detection_url":     amd_callback_url,
+            "machine_detection_method":  "POST",
+        })
+        log.info("[AMD] enabled — detection_time=%d ms callback=%s",
+                 amd_detection_time_ms, amd_callback_url)
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.post(
             f"{_BASE}/Call/",
             auth=_AUTH,
-            json={
-                "from":          PLIVO_PHONE_NUMBER,
-                "to":            to,
-                "answer_url":    webhook_url,
-                "answer_method": "POST",
-            },
+            json=payload,
         )
         r.raise_for_status()
         body = r.json()

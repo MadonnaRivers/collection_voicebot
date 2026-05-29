@@ -50,6 +50,7 @@ CALL_SUMMARY_INPUT_KEYS: tuple[str, ...] = (
     "customer_name",
     "phone_number",
     "loan_id",
+    "loan_app_id",        # caller-supplied loan application id (CRM linkage)
     "emi_overdue_amt",
     "emi_overdue_date",
     "emi_amount",         # alias of emi_overdue_amt
@@ -70,6 +71,7 @@ _INTERNAL_CTX_KEYS: frozenset[str] = frozenset({
     "retry_count",
     "turn_count",
     "partial_offer_made",   # legacy V1 flag, no longer used
+    "_inserted_at",         # /make-call TTL bookkeeping — not for n8n
 })
 
 
@@ -150,3 +152,67 @@ async def push_call_summary_webhook(url: str, body: dict[str, Any]) -> None:
         log.info("Call summary webhook OK (%s)", r.status_code)
     except Exception as exc:
         log.warning("Call summary webhook failed: %s", exc)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trigger envelope — secondary downstream-n8n notification
+# Fires ONLY for payment-positive outcomes (customer agrees to pay or commits
+# to a partial). All other outcomes (cannot_pay / already_paid / deceased /
+# disputed_loan / no_response / voicemail / no_pickup / busy / rejected) are
+# explicitly SKIPPED — the bot's primary push_data webhook still gets them.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# hangup_reason → trigger_code mapping. Returning "" means: don't fire.
+_TRIGGER_CODE_BY_HANGUP: dict[str, str] = {
+    "payment_today_confirmed": "PAYMENT_VOICEBOT",          # pays today
+    "ptp_confirmed":           "PAYMENT_VOICEBOT",          # promises to pay (PTP)
+    "partial_confirmed":       "PARTIAL_PAYMENT_VOICEBOT",  # partial payment commit
+}
+
+
+def trigger_code_for_hangup(hangup_reason: str) -> str:
+    """Return the trigger_code for this hangup_reason, or "" to skip the webhook."""
+    return _TRIGGER_CODE_BY_HANGUP.get((hangup_reason or "").strip(), "")
+
+
+def build_trigger_envelope(
+    ctx: dict[str, str] | None,
+    trigger_code: str = "PAYMENT_VOICEBOT",
+) -> dict[str, Any]:
+    """
+    n8n trigger-style envelope. Carries only the primary_key (loan_app_id)
+    so the downstream workflow can look up the rest from your DB.
+
+    Shape:
+      {
+        "trigger_code":          "PAYMENT_VOICEBOT" | "PARTIAL_PAYMENT_VOICEBOT",
+        "trigger_from_workflow": 0,
+        "instance_id":           "",
+        "primary_key":           "<loan_app_id from /make-call ctx>",
+        "unique_primary_key":    ""
+      }
+    """
+    cx = dict(ctx or {})
+    primary = str(cx.get("loan_app_id") or "").strip()
+    return {
+        "trigger_code":          trigger_code,
+        "trigger_from_workflow": 0,
+        "instance_id":           "",
+        "primary_key":           primary,
+        "unique_primary_key":    "",
+    }
+
+
+async def push_trigger_webhook(url: str, body: dict[str, Any]) -> None:
+    if not url:
+        return
+    pk = body.get("primary_key", "")
+    if not pk:
+        log.warning("Trigger webhook: primary_key is empty (loan_app_id missing in /make-call payload)")
+    try:
+        r = await http_client.post(url, json=body)
+        r.raise_for_status()
+        log.info("Trigger webhook OK (%s) — primary_key=%r trigger_code=%r",
+                 r.status_code, pk, body.get("trigger_code"))
+    except Exception as exc:
+        log.warning("Trigger webhook failed: %s", exc)

@@ -65,6 +65,13 @@ async def finalize_call_variables(
       summary, target_date, partial_amount, cannot_pay_reason,
       already_paid_date, already_paid_mode.
     """
+    # Voicemail / machine-answered calls — no human conversation to classify.
+    # Skip the LLM round-trip and return a deterministic summary.
+    if hangup_reason in ("voicemail", "voicemail_left"):
+        if hangup_reason == "voicemail_left":
+            return {"summary": "Voicemail reached — pre-recorded reminder message left."}
+        return {"summary": "Voicemail reached — call ended without leaving a message."}
+
     today_str = _date.today().isoformat()
     customer = ctx.get("customer_name", "customer")
     phone = ctx.get("phone_number", "")

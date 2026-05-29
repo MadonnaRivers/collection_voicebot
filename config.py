@@ -34,9 +34,9 @@ SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 # default — we stay on saarika for Devanagari output that matches the prompt.)
 SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saarika:v2.5")
 SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
-# bulbul:v3 formal female speakers: ishita (default here), simran, ritu, priya,
+# bulbul:v3 formal female speakers: simran (default here), ishita, ritu, priya,
 # pooja, neha, kavya, shreya, roopa. (v2-only speakers like anushka won't work.)
-SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "ishita")
+SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
@@ -66,8 +66,55 @@ CALL_SUMMARY_WEBHOOK_URL = os.getenv(
     "https://web-n8n.easyhomefinance.in/webhook/push_data",
 ).strip()
 
-# Plivo will POST recording metadata here when recording is ready (leave blank to disable)
-RECORDING_CALLBACK_URL = os.getenv("RECORDING_CALLBACK_URL", "").strip()
+# Plivo will POST recording metadata here when recording is ready.
+# Defaults to {NGROK_URL}/recording-callback so a single NGROK_URL change in
+# .env is enough — no more stale-URL surprises after ngrok tunnel rotates.
+# Explicitly set RECORDING_CALLBACK_URL=  (blank) to disable recording metadata.
+RECORDING_CALLBACK_URL = os.getenv(
+    "RECORDING_CALLBACK_URL", f"{NGROK_URL}/recording-callback",
+).strip()
+
+# ── Trigger-envelope webhook ──────────────────────────────────────────────────
+# Fires ONLY for payment-positive outcomes:
+#   payment_today_confirmed → trigger_code = "PAYMENT_VOICEBOT"
+#   ptp_confirmed           → trigger_code = "PAYMENT_VOICEBOT"
+#   partial_confirmed       → trigger_code = "PARTIAL_PAYMENT_VOICEBOT"
+# All other outcomes (cannot_pay / already_paid / deceased / disputed_loan /
+# no_response / voicemail / no_pickup / busy / rejected) are SKIPPED here.
+# CALL_SUMMARY_WEBHOOK_URL still receives EVERY call (untouched).
+# Leave TRIGGER_WEBHOOK_URL blank to disable the trigger push entirely.
+TRIGGER_WEBHOOK_URL = os.getenv("TRIGGER_WEBHOOK_URL", "").strip()
+
+# ── Voicemail / Answering Machine Detection ──────────────────────────────────
+# When AMD_ENABLED, /make-call adds Plivo's async-AMD params to the call POST.
+# Plivo runs detection in parallel with the call connecting (no extra latency
+# for humans) and POSTs the verdict to AMD_CALLBACK_URL.
+AMD_ENABLED           = os.getenv("AMD_ENABLED", "true").lower() not in ("0", "false", "no")
+AMD_CALLBACK_URL      = os.getenv("AMD_CALLBACK_URL", f"{NGROK_URL}/amd-callback").strip()
+# How long Plivo analyses incoming audio (ms). 2000 ms is a fast/accurate
+# default; raise to 4000 if too many false 'human' verdicts on voicemails.
+AMD_DETECTION_TIME_MS = int(os.getenv("AMD_DETECTION_TIME_MS", "2000"))
+# How long the media-stream handler waits for the AMD verdict before
+# committing to the normal opening (human flow). If a 'machine_*' verdict
+# arrives within this window we switch to voicemail mode.
+AMD_WAIT_MS           = int(os.getenv("AMD_WAIT_MS", "1500"))
+# When True, we leave a short pre-recorded message on voicemail before
+# hanging up. When False, we hang up silently with hangup_reason="voicemail".
+AMD_LEAVE_MESSAGE     = os.getenv("AMD_LEAVE_MESSAGE", "true").lower() not in ("0", "false", "no")
+# Delay (ms) between AMD verdict and speaking the voicemail message. Gives
+# the voicemail's own greeting + beep time to finish so our message lands
+# AFTER the beep (i.e. inside the recording window). Typical voicemail
+# greetings are 5–8 s. Raise if first half of the message gets cut off in
+# the recording; lower if customers report unrecorded silence at the start.
+AMD_BEEP_WAIT_MS      = int(os.getenv("AMD_BEEP_WAIT_MS", "6000"))
+
+# ── Hangup callback (captures EVERY call's end — answered or not) ────────────
+# Plivo POSTs here when the call ends. For connected calls we already have a
+# transcript file written by call_handler — we just log and move on. For
+# unanswered/busy/rejected calls (no transcript, no WS ever connected) we
+# synthesise a minimal transcript so /transcripts shows the attempt and the
+# CRM webhook gets the no-pickup signal for retry workflows.
+HANGUP_CALLBACK_URL   = os.getenv("HANGUP_CALLBACK_URL", f"{NGROK_URL}/call-hangup").strip()
 
 # Webhook to receive combined audio + transcript after call ends
 AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(

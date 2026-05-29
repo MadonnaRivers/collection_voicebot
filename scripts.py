@@ -76,6 +76,30 @@ def build_opening_greeting(ctx: dict[str, str]) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Voicemail message — spoken when Plivo AMD detects an answering machine.
+# One-way: no questions, no expectation of reply. Includes name, amount,
+# CIBIL hook and brand so the customer gets useful context on playback.
+# ─────────────────────────────────────────────────────────────────────────────
+def build_voicemail_message(ctx: dict[str, str]) -> str:
+    name   = ctx.get("customer_name") or ctx.get("name") or ""
+    amount = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
+
+    greeting = f"नमस्ते {name} जी, " if name else "नमस्ते जी, "
+    if amount:
+        return (
+            f"{greeting}Easy Home Finance से अदिति बोल रही हूँ। "
+            f"आपकी {amount} रुपये की EMI pending है। "
+            "कृपया जल्द से जल्द payment कर दीजिए ताकि penalty charges से बचें "
+            "और आपका CIBIL score safe रहे। धन्यवाद।"
+        )
+    return (
+        f"{greeting}Easy Home Finance से अदिति बोल रही हूँ। "
+        "आपकी EMI pending है। कृपया जल्द से जल्द payment कर दीजिए "
+        "ताकि penalty charges से बचें और आपका CIBIL score safe रहे। धन्यवाद।"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Mandatory closing (appended to several terminal scripts)
 # ─────────────────────────────────────────────────────────────────────────────
 _MANDATORY_CLOSING = (
