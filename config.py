@@ -138,8 +138,11 @@ STT_MAX_UTTERANCE_SEC   = float(os.getenv("STT_MAX_UTTERANCE_SEC",  "25"))
 # Consecutive VAD-speech frames required before firing the barge-in signal.
 STT_BARGE_IN_MIN_FRAMES = int(os.getenv("STT_BARGE_IN_MIN_FRAMES", "12"))
 
-# TTS concurrency
-TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "12"))
+# TTS concurrency — global cap on simultaneous Sarvam TTS requests across all
+# active calls. With Sarvam Pro + 100 concurrent calls and ~2 in-flight
+# sentences per call (pipelined), 200 is a safe ceiling. tts.py reads the env
+# var directly; this is the documented default.
+TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "200"))
 TTS_MAX_RETRIES      = int(os.getenv("TTS_MAX_RETRIES",      "4"))
 TTS_READ_TIMEOUT_SEC = float(os.getenv("TTS_READ_TIMEOUT_SEC","20"))
 

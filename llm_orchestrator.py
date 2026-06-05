@@ -162,11 +162,14 @@ _FLOW_SPEC = """\
    Trigger ONLY जब ग्राहक का message कहता हो "आज pay करूँगा / अभी कर देता हूँ / right now"
    और कोई future-time reference नहीं है ("कल", "परसो", "अगले हफ्ते", कोई specific future date
    → ये सब PTP हैं, payment_confirm नहीं)।
-   Closing (exact):
+
+   target_date store करो (CRM के लिए) — हमेशा NEXT DAY:
+     context_patch.target_date = "TOMORROW_DATE_ISO"   (= CURRENT_DATE_ISO + 1)।
+
+   Closing (exact — कोई date mention नहीं):
      "Thank you [NAME] जी। Payment के लिए SMS में भेजे गए link का use कीजिए।
-      आज [TODAY_DATE] तक payment कर दीजिए ताकि आपका credit score safe रहे।
+      Please जल्द से जल्द payment कर दीजिए ताकि आपका credit score safe रहे।
       आपका दिन शुभ हो।"
-   [TODAY_DATE] = CURRENT_DATE_ISO को "DD Mon YYYY" format में।
    call_phase="payment_confirm", end_call=true, hangup_reason="payment_today_confirmed"।
 
 3) ptp — ग्राहक future date तक pay करने का promise करे
@@ -243,9 +246,13 @@ _FLOW_SPEC = """\
 
 5) partial — ग्राहक partial payment की बात करे (amount specific हो या न हो)
    तो तुरंत partial flow close करें। minimum amount rule नहीं लगाना, ₹1500 rule नहीं लगाना,
-   और remainder date/target_date नहीं पूछना।
+   और remainder date ग्राहक से नहीं पूछना।
 
-   Closing (exact):
+   target_date store करो (CRM के लिए) — हमेशा NEXT DAY:
+     context_patch.target_date = "TOMORROW_DATE_ISO"   (= CURRENT_DATE_ISO + 1)।
+   अगर ग्राहक ने specific amount बताया हो: context_patch.partial_amount = "<exact rupee>"।
+
+   Closing (exact — कोई amount/date mention नहीं):
      "ठीक है [NAME] जी, payment के लिए इस call के बाद भेजे गए payment link का use कीजिए।
       कृपया EMI जल्द से जल्द pay कर दीजिए ताकि penalty charges से बचें, आपका दिन शुभ हो।"
    call_phase="partial", end_call=true, hangup_reason="partial_confirmed"।
@@ -336,6 +343,8 @@ def _hard_date_block(ctx: dict[str, str]) -> str:
         f"LAST_VALID_ISO   : {last_d.isoformat()}  ({last_human})\n"
         f"                   ← यही maximum allowed date है (= DUE_ANCHOR + 90 days)।\n"
         f"CURRENT_DATE_ISO : {today.isoformat()}\n"
+        f"TOMORROW_DATE_ISO: {(today + timedelta(days=1)).isoformat()}\n"
+        f"                   ← payment_confirm ke liye target_date यही है (current + 1)।\n"
         "\n"
         "हर PTP date इस rule से check करें:\n"
         f"  • customer's target_date ≤ {last_d.isoformat()}  → ACCEPT, store, close।\n"
@@ -707,20 +716,51 @@ def _enforce_ptp_no_date_closing(
     return dict(result, say=fixed)
 
 
+def _enforce_payment_confirm_tomorrow(
+    result: dict[str, Any],
+    ctx: dict[str, str],
+) -> dict[str, Any]:
+    """
+    Deterministic: when customer agrees to pay today (payment_today_confirmed),
+    target_date in the CRM payload must always be TOMORROW (CURRENT_DATE + 1),
+    and the closing must NOT speak any date. We force both even if the LLM
+    omitted target_date or improvised today's date / a longer offset.
+    """
+    if result.get("hangup_reason") != "payment_today_confirmed":
+        return result
+    if not result.get("end_call"):
+        return result
+    tomorrow_iso = (date.today() + timedelta(days=1)).isoformat()
+    patch = dict(result.get("context_patch") or {})
+    patch["target_date"] = tomorrow_iso
+    name = (ctx.get("customer_name") or "").strip()
+    name_prefix = f"{name} जी" if name else "जी"
+    fixed_say = (
+        f"Thank you {name_prefix}। Payment के लिए SMS में भेजे गए link का use कीजिए। "
+        "Please जल्द से जल्द payment कर दीजिए ताकि आपका credit score safe रहे। "
+        "आपका दिन शुभ हो।"
+    )
+    return dict(result, say=fixed_say, context_patch=patch)
+
+
 def _enforce_partial_closing(
     result: dict[str, Any],
     ctx: dict[str, str],
 ) -> dict[str, Any]:
     """
     Deterministic: a confirmed partial closing must NOT speak any amount, date,
-    or ₹1500-style minimum. We force the canonical "payment link forwarded"
-    closing while preserving partial_amount in context_patch (CRM still gets
-    it if the customer named a specific amount).
+    or ₹1500-style minimum. We force:
+      • the canonical "payment link forwarded" closing
+      • context_patch.target_date = TOMORROW (CURRENT_DATE + 1) for CRM
+    partial_amount (if the customer named a specific number) is preserved.
     """
     if result.get("hangup_reason") != "partial_confirmed":
         return result
     if not result.get("end_call"):
         return result
+    tomorrow_iso = (date.today() + timedelta(days=1)).isoformat()
+    patch = dict(result.get("context_patch") or {})
+    patch["target_date"] = tomorrow_iso
     name = (ctx.get("customer_name") or "").strip()
     name_prefix = f"{name} जी" if name else "जी"
     fixed = (
@@ -728,7 +768,7 @@ def _enforce_partial_closing(
         "please जल्द से जल्द अपनी EMI pay कर दीजिए ताकि penalty charges से बचें। "
         "आपका दिन शुभ हो।"
     )
-    return dict(result, say=fixed)
+    return dict(result, say=fixed, context_patch=patch)
 
 
 def _maybe_enforce_90day_window(
@@ -914,6 +954,8 @@ async def run_conversation_turn(
         result = _enforce_ptp_no_date_closing(result, ctx)
         # Partial closing must never speak amount / date / ₹1500 rule.
         result = _enforce_partial_closing(result, ctx)
+        # payment_confirm: force target_date = tomorrow + no-date closing.
+        result = _enforce_payment_confirm_tomorrow(result, ctx)
         return result
 
     last_exc: BaseException | None = None
@@ -1089,6 +1131,8 @@ async def stream_conversation_turn(
         result = _enforce_ptp_no_date_closing(result, ctx)
         # Partial closing must never speak amount / date / ₹1500 rule.
         result = _enforce_partial_closing(result, ctx)
+        # payment_confirm: force target_date = tomorrow + no-date closing.
+        result = _enforce_payment_confirm_tomorrow(result, ctx)
 
         # Fire on_say if not already fired (deferred date-bearing say, or regex
         # never matched). Uses the FINAL corrected say.

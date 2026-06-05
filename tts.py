@@ -30,10 +30,11 @@ log = logging.getLogger("aditi")
 # ─────────────────────────────────────────────────────────────────────────────
 # Global TTS concurrency limiter
 # Caps simultaneous Sarvam requests so rate limits aren't hit in bulk.
-# Default 15 — safe for Sarvam starter plan with 50 concurrent calls.
-# Raise TTS_CONCURRENCY in .env when on a paid plan with higher RPM.
+# Default 200 — sized for Sarvam Pro plan running 100 concurrent calls
+# (~2 in-flight sentences per call from pipelined sentence streaming).
+# Lower TTS_CONCURRENCY in .env on starter plans (e.g. 30) to avoid 429s.
 # ─────────────────────────────────────────────────────────────────────────────
-_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "50"))
+_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "200"))
 _TTS_SEM: asyncio.Semaphore | None = None
 
 def _sem() -> asyncio.Semaphore:
