@@ -34,7 +34,7 @@ log = logging.getLogger("aditi")
 # (~2 in-flight sentences per call from pipelined sentence streaming).
 # Lower TTS_CONCURRENCY in .env on starter plans (e.g. 30) to avoid 429s.
 # ─────────────────────────────────────────────────────────────────────────────
-_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "200"))
+_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "500"))
 _TTS_SEM: asyncio.Semaphore | None = None
 
 def _sem() -> asyncio.Semaphore:

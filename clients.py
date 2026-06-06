@@ -17,7 +17,7 @@ from config import OPENAI_API_KEY
 # for Sarvam (biggest win — TLS handshake is ~80 ms otherwise).
 http = httpx.AsyncClient(
     timeout=httpx.Timeout(connect=3.0, read=30.0, write=10.0, pool=15.0),
-    limits=httpx.Limits(max_keepalive_connections=300, max_connections=800),
+    limits=httpx.Limits(max_keepalive_connections=500, max_connections=1500),
 )
 
 # OpenAI client for the dialogue LLM.

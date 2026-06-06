@@ -54,7 +54,7 @@ _FORBIDDEN_CTX_KEYS: frozenset[str] = frozenset({
 # Sized for 100 concurrent calls: denoise runs on every inbound audio chunk
 # (~50/s per call). 64 worker threads keeps p99 dispatch latency low without
 # starving the asyncio loop.
-_WORKER_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=64, thread_name_prefix="worker")
+_WORKER_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=128, thread_name_prefix="worker")
 
 
 async def media_stream(ws: WebSocket) -> None:
