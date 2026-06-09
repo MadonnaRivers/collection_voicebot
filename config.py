@@ -39,17 +39,20 @@ SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
 SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
+# gpt-4.1-mini chosen for best Hindi instruction-following + JSON adherence.
+# (gpt-4o-mini is ~100ms faster TTFT but slightly worse on complex flow rules.)
 LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Orchestrator (voice dialogue brain)
 ORCHESTRATOR_TEMPERATURE    = float(os.getenv("ORCHESTRATOR_TEMPERATURE",    "0.1"))
-# Fewer history messages → smaller prompt → faster LLM time-to-first-token
-# on later turns. 18 still keeps ~9 exchanges of context.
-ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "18"))
+# Fewer history messages → smaller prompt → faster LLM time-to-first-token.
+# 10 keeps ~5 exchanges (enough for typical EMI collection flow) and trims
+# ~150-250ms off LLM TTFT vs 18-message history.
+ORCHESTRATOR_MAX_HISTORY    = int(os.getenv("ORCHESTRATOR_MAX_HISTORY",      "10"))
 ORCHESTRATOR_API_RETRIES    = int(os.getenv("ORCHESTRATOR_API_RETRIES",      "3"))
-# 400 tokens: enough for the longest payment_confirm template + JSON wrapper
-ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "400"))
+# 300 tokens: trimmed from 400 — every closing template fits comfortably.
+ORCHESTRATOR_MAX_TOKENS     = int(os.getenv("ORCHESTRATOR_MAX_TOKENS",       "300"))
 
 # ── Server ────────────────────────────────────────────────────────────────────
 PORT              = int(os.getenv("PORT",           "5050"))
@@ -130,9 +133,11 @@ BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 
 # ── STT (REST + local VAD) tunables ───────────────────────────────────────────
 # Silence after speech before the utterance is POSTed to Sarvam REST.
-STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "500"))
+# 280ms is aggressive — gets total mid-turn latency to ~1.2s. If callers
+# report being cut off mid-sentence (e.g. while thinking), raise to 350-400.
+STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "220"))
 # Drop bursts shorter than this (cough/pop/noise).
-STT_MIN_UTTERANCE_MS    = int(os.getenv("STT_MIN_UTTERANCE_MS",    "200"))
+STT_MIN_UTTERANCE_MS    = int(os.getenv("STT_MIN_UTTERANCE_MS",    "150"))
 # Force-flush long monologues. Sarvam REST caps at 30 s.
 STT_MAX_UTTERANCE_SEC   = float(os.getenv("STT_MAX_UTTERANCE_SEC",  "25"))
 # Consecutive VAD-speech frames required before firing the barge-in signal.
@@ -148,11 +153,14 @@ TTS_READ_TIMEOUT_SEC = float(os.getenv("TTS_READ_TIMEOUT_SEC","20"))
 
 # ── VAD (WebRTC noise gate) ───────────────────────────────────────────────────
 VAD_MODE        = int(os.getenv("VAD_MODE",        "2"))
-# 100ms = fast END_SPEECH; raise to 200 if trailing syllables get clipped
-VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "100"))
+# 80ms = aggressive END_SPEECH for sub-1.2s turn latency. Raise to 120 if
+# trailing syllables get clipped (e.g. customer's "हाँ" gets cut to "ह").
+VAD_HANGOVER_MS = int(os.getenv("VAD_HANGOVER_MS", "80"))
 VAD_ENABLED     = os.getenv("VAD_ENABLED", "true").lower() not in ("0", "false", "no")
 
 # ── Spectral denoiser ─────────────────────────────────────────────────────────
+# Enabled — improves STT accuracy on noisy mobile calls. Adds ~50-100ms but
+# the audio-quality / STT-accuracy win is more important than the latency cost.
 DENOISE_ENABLED     = os.getenv("DENOISE_ENABLED",     "true").lower() not in ("0", "false", "no")
 DENOISE_STRENGTH    = float(os.getenv("DENOISE_STRENGTH",    "0.92"))
 DENOISE_PROFILE_SEC = float(os.getenv("DENOISE_PROFILE_SEC", "2.0"))

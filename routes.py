@@ -40,6 +40,13 @@ async def _lifespan(app: FastAPI):
         log.info("Recording callback URL: %s", RECORDING_CALLBACK_URL)
     if not AUDIO_TRANSCRIPT_WEBHOOK_URL:
         log.warning("AUDIO_TRANSCRIPT_WEBHOOK_URL is not set — audio files will not be forwarded to n8n")
+    # Pre-warm TLS connections to Sarvam + OpenAI so the FIRST call doesn't
+    # pay the ~150-250 ms cold-start handshake on greeting/STT/TTS.
+    try:
+        from clients import warmup_connections
+        await warmup_connections()
+    except Exception as exc:
+        log.debug("Connection pre-warm failed: %s", exc)
     yield                          # server is running
     await _http_client.aclose()   # clean up httpx on shutdown → no "Event loop is closed" warning
     log.info("HTTP client closed")
