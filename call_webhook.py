@@ -140,6 +140,26 @@ def build_call_summary_push_body(
     for k in CALL_SUMMARY_OUTPUT_KEYS:
         body.setdefault(k, None)
 
+    # ── 4. Normalize target_date for "no real follow-up" outcomes ──────────
+    # For these outcomes there's no customer-committed future date, so we
+    # stamp target_date = today (CURRENT_DATE). Downstream CRM uses this as
+    # the day to retry / route to human agent.
+    _TARGET_TODAY_HANGUPS = {
+        "no_response",
+        "disputed_loan",
+        "voicemail",
+        "voicemail_left",
+        "no_answer",
+        "busy",
+        "rejected",
+        "invalid_number",
+        "network_failure",
+        "cancelled",
+        "carrier_disconnect",
+    }
+    if hangup_reason in _TARGET_TODAY_HANGUPS:
+        body["target_date"] = ist_now().date().isoformat()
+
     return body
 
 

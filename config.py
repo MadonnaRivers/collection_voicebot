@@ -39,9 +39,13 @@ SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
 SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
-# gpt-4.1-mini chosen for best Hindi instruction-following + JSON adherence.
-# (gpt-4o-mini is ~100ms faster TTFT but slightly worse on complex flow rules.)
-LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
+# gpt-4o-mini chosen for ~500-700ms LLM TTFS (vs ~1200ms on gpt-4.1-mini),
+# bringing total mid-turn latency to ~1.5s. Our deterministic safety nets
+# (_enforce_ptp_no_date_closing, _enforce_partial_closing,
+#  _enforce_payment_confirm_tomorrow, _maybe_rescue_in_window_date) catch
+# the small quality regression on complex flow rules. Switch back to
+# gpt-4.1-mini in .env if Hindi instruction adherence drops noticeably.
+LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4o-mini")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Orchestrator (voice dialogue brain)
