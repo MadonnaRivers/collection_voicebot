@@ -34,7 +34,7 @@ log = logging.getLogger("aditi")
 # (~2 in-flight sentences per call from pipelined sentence streaming).
 # Lower TTS_CONCURRENCY in .env on starter plans (e.g. 30) to avoid 429s.
 # ─────────────────────────────────────────────────────────────────────────────
-_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "500"))
+_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "80"))
 _TTS_SEM: asyncio.Semaphore | None = None
 
 def _sem() -> asyncio.Semaphore:
@@ -161,14 +161,22 @@ async def tts_stream(
                         return got_audio
 
             except Exception as exc:
-                log.error("TTS stream error: %s", exc)
+                # Production logs showed Sarvam occasionally returning 200 then
+                # killing the stream mid-flight ("TTS stream error: " with no
+                # detail), leading to 30+ s of dead air for the customer.
+                # Treat ANY stream error the same as a 429 — retry with backoff.
+                log.error("TTS stream error (attempt %d/%d): %r",
+                          attempt + 1, len(_429_BACKOFFS) + 1, exc)
+                if attempt < len(_429_BACKOFFS):
+                    await asyncio.sleep(_429_BACKOFFS[attempt])
+                    continue
                 return False
 
         # 429 backoff — semaphore released while we wait so others can proceed
         if attempt < len(_429_BACKOFFS):
             await asyncio.sleep(_429_BACKOFFS[attempt])
 
-    log.error("TTS stream: all %d attempts exhausted (429)", len(_429_BACKOFFS) + 1)
+    log.error("TTS stream: all %d attempts exhausted", len(_429_BACKOFFS) + 1)
     return False
 
 

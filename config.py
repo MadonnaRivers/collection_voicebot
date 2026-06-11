@@ -154,7 +154,7 @@ STT_BARGE_IN_MIN_FRAMES = int(os.getenv("STT_BARGE_IN_MIN_FRAMES", "12"))
 # active calls. With Sarvam Pro + 100 concurrent calls and ~2 in-flight
 # sentences per call (pipelined), 200 is a safe ceiling. tts.py reads the env
 # var directly; this is the documented default.
-TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "500"))
+TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "80"))
 TTS_MAX_RETRIES      = int(os.getenv("TTS_MAX_RETRIES",      "4"))
 TTS_READ_TIMEOUT_SEC = float(os.getenv("TTS_READ_TIMEOUT_SEC","20"))
 
