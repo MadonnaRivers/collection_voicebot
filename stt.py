@@ -16,6 +16,7 @@ import audioop
 import base64
 import io
 import logging
+import time
 import wave
 from typing import Awaitable, Callable
 
@@ -72,6 +73,13 @@ class RestStt:
         self._ws_cm = None
         self._ws = None
         self._recv_task: asyncio.Task | None = None
+        # In-flight tracking: a flush is "pending" when we sent a transcribe
+        # to Sarvam but haven't yet seen the matching response. The silence
+        # timer in call_handler pauses while pending_recent() is True so the
+        # bot doesn't fire "हैलो आप वहाँ हैं?" over a customer whose long
+        # answer is still being transcribed.
+        self._last_flush_at:    float = 0.0
+        self._last_response_at: float = 0.0
 
     async def _ensure_ws(self) -> bool:
         if self._ws is not None:
@@ -119,11 +127,17 @@ class RestStt:
                 msg_type = getattr(msg, "type", None) or (msg.get("type") if isinstance(msg, dict) else None)
                 msg_data = getattr(msg, "data", None) or (msg.get("data") if isinstance(msg, dict) else None)
                 if msg_type == "error":
+                    # Errors still count as a "response" — clear the pending flag.
+                    self._last_response_at = time.monotonic()
                     err = getattr(msg_data, "error", None) or str(msg_data)
                     log.error("[STT] websocket error: %s", err)
                     continue
                 if msg_type in ("events", "event"):
+                    # VAD signals, not transcript responses — don't clear pending.
                     continue
+                # Any non-events message is treated as the response to a
+                # prior transcribe call (whether the transcript is empty or not).
+                self._last_response_at = time.monotonic()
                 transcript = (
                     (getattr(msg_data, "transcript", None) if msg_data is not None else None)
                     or (msg_data.get("transcript") if isinstance(msg_data, dict) else None)
@@ -223,12 +237,31 @@ class RestStt:
         try:
             await self._ws.transcribe(audio=audio_b64, encoding="audio/wav", sample_rate=16000)
             await self._ws.flush()
+            # Mark this flush as in-flight; cleared in _recv_loop when the
+            # WS answers (transcript or error). pending_recent() pauses the
+            # silence timer until then.
+            self._last_flush_at = time.monotonic()
         except Exception as exc:
             log.warning("[STT] websocket send/flush error: %s", exc)
+            # The send failed — no response is coming, so the pending flag
+            # must NOT linger and block the silence timer.
+            self._last_response_at = time.monotonic()
             await self._close_ws()
+
+    def pending_recent(self, max_age: float = 4.0) -> bool:
+        """True iff a flushed utterance is still awaiting an STT response and
+        that flush happened within max_age seconds. The cap prevents a stuck
+        in-flight flag (e.g. Sarvam never answered) from freezing the silence
+        timer forever; 4 s comfortably covers Sarvam's typical 0.5-1.5 s
+        response time while still recovering from a lost response."""
+        if self._last_flush_at <= self._last_response_at:
+            return False
+        return (time.monotonic() - self._last_flush_at) < max_age
 
     async def close(self) -> None:
         self._closed = True
         if self._in_speech and self._buf:
             await self._flush()
+        # Reset in-flight markers so a closed STT never reports pending_recent.
+        self._last_response_at = time.monotonic()
         await self._close_ws()

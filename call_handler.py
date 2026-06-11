@@ -539,6 +539,18 @@ async def media_stream(ws: WebSocket) -> None:
                                     _vad_hangover_left[0] -= 1
                                     is_speech = True
                             if len(pcm16) == 320:
+                                # Refresh the "customer is making sound" timestamp
+                                # on every confirmed speech frame, but only once
+                                # the speech-start gate (on_speech_start) has
+                                # already fired — otherwise short noise bursts
+                                # would falsely pause the silence timer. After
+                                # the gate, this turns last_speech_started_at
+                                # from a one-shot stamp into a continuous
+                                # "last audible sound" tracker, which prevents
+                                # the silence prompt firing over a 5-10 s
+                                # customer monologue (e.g. job-loss explanation).
+                                if is_speech and sess.last_speech_started_at:
+                                    sess.last_speech_started_at = time.monotonic()
                                 await rest_stt.feed(pcm16, is_speech)
                         except Exception as exc:
                             log.debug("audio frame error: %s", exc)
@@ -668,14 +680,26 @@ async def media_stream(ws: WebSocket) -> None:
                     if sess.speaking or not sess.opening_complete:
                         await asyncio.sleep(tick)
                         continue
-                    # NEW: pause while customer is in the middle of speaking
+                    # Pause while customer is in the middle of speaking.
+                    # With the per-frame refresh in recv_ws, this timestamp
+                    # tracks "last audible sound", so the 5 s grace now means
+                    # "5 s of true silence since the last speech frame", not
+                    # "5 s since speech-start" — which was the source of the
+                    # silence-prompt clash on long customer utterances.
                     if sess.last_speech_started_at:
                         age = time.monotonic() - sess.last_speech_started_at
                         if age < STALE_SPEECH_SEC:
                             await asyncio.sleep(tick)
                             continue
-                        # Stale flag — STT never produced a transcript; clear it.
+                        # Stale flag — no fresh speech for STALE_SPEECH_SEC; clear it.
                         sess.last_speech_started_at = 0.0
+                    # Also pause while a flushed utterance is still awaiting a
+                    # transcript from Sarvam. Otherwise the silence prompt
+                    # could fire in the ~0.5-1.5 s window between VAD-detected
+                    # end-of-speech and the transcript arriving.
+                    if rest_stt.pending_recent():
+                        await asyncio.sleep(tick)
+                        continue
                     wait = min(tick, remaining)
                     try:
                         return await asyncio.wait_for(utt_q.get(), timeout=wait)
