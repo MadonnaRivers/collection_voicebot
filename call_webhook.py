@@ -20,6 +20,7 @@ _STATE_LABEL: dict[str, str] = {
     "cannot_pay":      "Cannot Pay Reason",
     "already_paid":    "Already Paid",
     "deceased":        "Deceased Report",
+    "callback_later":  "Callback Requested",
     "no_response":     "No Response",
 }
 
@@ -147,6 +148,7 @@ def build_call_summary_push_body(
     _TARGET_TODAY_HANGUPS = {
         "no_response",
         "disputed_loan",
+        "callback_requested",
         "voicemail",
         "voicemail_left",
         "no_answer",

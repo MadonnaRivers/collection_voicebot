@@ -325,11 +325,40 @@ async def media_stream(ws: WebSocket) -> None:
             return sess.opening_complete and not sess.closing_in_progress
 
         async def on_speech_start() -> None:
-            # Barge-in is DISABLED. The bot always finishes its current line;
-            # whatever the customer says meanwhile is transcribed and queued,
-            # then handled on the next turn. (Half-duplex / turn-based.)
+            """
+            Barge-in: when sustained customer speech is detected mid-TTS,
+            abort the current bot line immediately so the bot doesn't keep
+            saying "हैलो आप वहाँ हैं?" over a speaking customer.
+
+            Suppressed during:
+              • opening greeting (let it finish — sets the conversation up)
+              • terminal closing lines (call is ending, no point interrupting)
+              • the brief post-TTS guard window (avoid bot-voice leak triggering it)
+            """
             log.info("[STT] speech detected")
-            return
+            # Mark that the customer is actively producing input. The silence
+            # timer in the LLM loop checks this flag and pauses while it's set,
+            # so we never fire "हैलो आप वहाँ हैं?" over a speaking customer.
+            sess.last_speech_started_at = time.monotonic()
+            if not sess.speaking:
+                return
+            if not _barge_in_allowed():
+                return
+            # Post-TTS guard: ignore for BARGE_IN_GUARD_SEC after each new TTS
+            # start, to avoid the tail of bot's own audio bleeding into mic.
+            if sess.tts_started_at and (time.monotonic() - sess.tts_started_at) < BARGE_IN_GUARD_SEC:
+                return
+            log.info("[BARGE-IN] customer started speaking — aborting bot TTS")
+            sess.barge_in_active = True
+            abort[0] = True
+            # Tell Plivo to flush any buffered bot audio so the customer
+            # hears the cut immediately, not after the buffer drains.
+            clr = _carrier.clear_msg(sess.stream_sid)
+            if clr is not None:
+                try:
+                    await ws.send_text(json.dumps(clr))
+                except Exception as exc:
+                    log.debug("clearAudio send failed: %s", exc)
 
         # ── Voicemail-by-STT fallback ──────────────────────────────────────
         # When Plivo AMD misses (no callback, slow callback, or unsupported on
@@ -356,6 +385,9 @@ async def media_stream(ws: WebSocket) -> None:
             return any(p.lower() in low for p in _VOICEMAIL_PHRASES)
 
         async def on_transcript(text: str) -> None:
+            # Customer's utterance finished and was transcribed → clear the
+            # speech-active flag so the silence timer can resume counting.
+            sess.last_speech_started_at = 0.0
             text = (text or "").strip()
             if not text or sess.done or text == sess.last_queued:
                 return
@@ -481,10 +513,12 @@ async def media_stream(ws: WebSocket) -> None:
                     elif evt_type == "audio_frame":
                         if sess.done:
                             continue
-                        # Half-duplex policy: while bot audio is playing (or terminal
-                        # closing is in progress), ignore inbound audio frames so STT
-                        # doesn't capture bot-side leakage / cross-talk as user input.
-                        if sess.speaking or sess.closing_in_progress:
+                        # Block customer audio ONLY during opening greeting
+                        # (let it set the scene cleanly) and during terminal
+                        # closings (call is ending anyway). At every other
+                        # moment audio flows through so STT can detect customer
+                        # speech and trigger barge-in via on_speech_start().
+                        if not sess.opening_complete or sess.closing_in_progress:
                             continue
                         mulaw = payload["mulaw"]
                         try:
@@ -615,14 +649,33 @@ async def media_stream(ws: WebSocket) -> None:
             # Greeting fired by call_start handler.
 
             async def _wait_user_silence(timeout: float) -> str | None:
-                """Silence budget pauses while bot is speaking AND while the
-                opening greeting hasn't finished yet (race-window guard)."""
+                """Silence budget pauses while:
+                  - bot is currently speaking,
+                  - opening greeting hasn't finished yet,
+                  - or customer is actively mid-utterance (STT detected
+                    speech but the transcript hasn't arrived yet).
+                Without the 3rd guard the silence prompt would fire while
+                the customer is in the middle of saying something — exactly
+                the "हैलो आप वहाँ हैं?" clash we saw in prod logs.
+                """
+                # Stale-utterance grace: if speech_start fires but no transcript
+                # arrives within this window (cough, mic noise, brief click),
+                # assume STT lost it and resume counting silence.
+                STALE_SPEECH_SEC = 5.0
                 remaining = timeout
                 tick = 0.3
                 while remaining > 0 and not sess.done:
                     if sess.speaking or not sess.opening_complete:
                         await asyncio.sleep(tick)
                         continue
+                    # NEW: pause while customer is in the middle of speaking
+                    if sess.last_speech_started_at:
+                        age = time.monotonic() - sess.last_speech_started_at
+                        if age < STALE_SPEECH_SEC:
+                            await asyncio.sleep(tick)
+                            continue
+                        # Stale flag — STT never produced a transcript; clear it.
+                        sess.last_speech_started_at = 0.0
                     wait = min(tick, remaining)
                     try:
                         return await asyncio.wait_for(utt_q.get(), timeout=wait)

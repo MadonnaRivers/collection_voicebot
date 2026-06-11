@@ -34,7 +34,7 @@ SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 # 1M+ hours of real Indian speech (8kHz call-center audio, code-mixing,
 # multi-speaker). It transcribes in the source language (Devanagari for Hindi)
 # when a language_code is supplied — exactly what our Hindi prompt needs.
-SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saaras:v2.5")
+SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saaras:v3")
 SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
 # bulbul:v3 female voices: ishita (Sarvam's recommended default — best across
 # Hindi/Telugu/Kannada accents), priya, simran, ritu, neha, pooja, kavya,
@@ -138,9 +138,11 @@ BARGE_IN_GUARD_SEC       = float(os.getenv("BARGE_IN_GUARD_SEC",       "1.5"))
 
 # ── STT (REST + local VAD) tunables ───────────────────────────────────────────
 # Silence after speech before the utterance is POSTed to Sarvam REST.
-# 280ms is aggressive — gets total mid-turn latency to ~1.2s. If callers
-# report being cut off mid-sentence (e.g. while thinking), raise to 350-400.
-STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "220"))
+# 400ms is the sweet spot: low enough for snappy turn latency, high enough
+# that natural thinking-pauses don't fragment a sentence into 2 utterances.
+# Real-call log showed 220ms was splitting "मैंने ... पेमेंट" into two,
+# which then confused the LLM.
+STT_SILENCE_HANGOVER_MS = int(os.getenv("STT_SILENCE_HANGOVER_MS", "400"))
 # Drop bursts shorter than this (cough/pop/noise).
 STT_MIN_UTTERANCE_MS    = int(os.getenv("STT_MIN_UTTERANCE_MS",    "150"))
 # Force-flush long monologues. Sarvam REST caps at 30 s.

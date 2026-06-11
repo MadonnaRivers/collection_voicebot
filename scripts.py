@@ -51,12 +51,12 @@ def build_default_ctx() -> dict[str, str]:
 def build_opening_greeting(ctx: dict[str, str]) -> str:
     """
     Build the opening greeting directly from context — zero LLM latency.
-    Wording is kept word-for-word in sync with the OPENING block in
-    llm_orchestrator._FLOW_SPEC so the customer hears the same line whether
-    the opener is scripted or re-spoken later by the LLM (e.g. on confusion).
 
-    Note: the EMI due/overdue date is intentionally NOT spoken in the opening
-    — it makes the line shorter and the customer can ask via FAQ if needed.
+    Kept short (~14 words / ~5s of audio) so customers hear the bot speak
+    within ~1.5s of pickup. The longer "मैं अदिति बोल रही हूँ Easy Home
+    Finance से" intro is removed from the opening — bot's brand identity
+    is established by the company name + EMI amount, and customers who
+    ask "कौन सी company?" get the full company name via the FAQ handler.
     """
     name   = ctx.get("customer_name") or ctx.get("name") or ""
     amount = ctx.get("emi_amount") or ctx.get("emi_overdue_amt") or ""
@@ -65,13 +65,12 @@ def build_opening_greeting(ctx: dict[str, str]) -> str:
 
     if amount:
         return (
-            f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
-            f"आपकी home loan EMI {amount} रुपये pending है। "
-            "आप कब तक payment कर पाएंगे?"
+            f"{greeting}Easy Home Finance से अदिति। "
+            f"आपकी EMI {amount} रुपये pending है — कब तक pay कर पाएंगे?"
         )
     return (
-        f"{greeting}मैं अदिति बोल रही हूँ Easy Home Finance से। "
-        "आपकी EMI pending है। आप कब तक payment कर पाएंगे?"
+        f"{greeting}Easy Home Finance से अदिति। "
+        "आपकी EMI pending है — कब तक pay कर पाएंगे?"
     )
 
 

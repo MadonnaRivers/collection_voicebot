@@ -113,7 +113,7 @@ company name, payment link location) → context से 1-line direct answer द
 
 [Output schema — strict]
 {"say":"...","context_patch":{...},"end_call":bool,"hangup_reason":"...","call_phase":"..."}
-Allowed call_phase: opening, payment_confirm, ptp, partial, cannot_pay, already_paid, deceased, disputed_loan, no_response
+Allowed call_phase: opening, payment_confirm, ptp, partial, cannot_pay, already_paid, deceased, disputed_loan, callback_later, no_response
 """
 
 _FLOW_SPEC = """\
@@ -273,6 +273,20 @@ _FLOW_SPEC = """\
      "यह number हमारे organization Easy Home Finance में एक loan के साथ registered है।
       अधिक जानकारी के लिए कृपया हमारे customer care से contact कीजिए। आपका दिन शुभ हो।"
    call_phase="disputed_loan", end_call=true, hangup_reason="disputed_loan"।
+
+9) callback_later — ग्राहक busy हैं / meeting में हैं / अभी बात नहीं कर सकते /
+   "बाद में call करो" type request
+   Triggers (any of):
+     - "meeting में हूँ", "busy हूँ", "अभी busy हूँ", "in a meeting"
+     - "बाद में call करो", "later call कीजिए", "call me later",
+       "थोड़ी देर बाद बात करते हैं", "बाद में बात करेंगे"
+     - "अभी बात नहीं कर सकता", "अभी time नहीं है"
+     - "drive कर रहा हूँ", "driving", "गाड़ी चला रहा हूँ"
+   कोई argue या payment push नहीं। Polite acknowledge करें।
+   Closing (exact, verbatim):
+     "ठीक है [NAME] जी, समझ रही हूँ। हम आपको थोड़ी देर बाद call करेंगे।
+      Please जल्द से जल्द EMI pay कर दीजिए ताकि penalty से बचें। आपका दिन शुभ हो।"
+   call_phase="callback_later", end_call=true, hangup_reason="callback_requested"।
 
 [Closing rule]
 payment_confirm / ptp / partial / cannot_pay / already_paid / deceased / disputed_loan —
@@ -821,6 +835,7 @@ _HANGUP_TO_PHASE: dict[str, str] = {
     "no_response":              "no_response",
     "cannot_pay_acknowledged":  "cannot_pay",
     "disputed_loan":            "disputed_loan",
+    "callback_requested":       "callback_later",
     "voicemail":                "voicemail",
     "voicemail_left":           "voicemail",
     "orchestrator_failure":     "error",

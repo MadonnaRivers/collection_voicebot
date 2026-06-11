@@ -43,6 +43,12 @@ class CallSession:
 
     barge_in_active:   bool = False # True while collecting post-barge-in utterance
 
+    # Monotonic time when STT last detected customer speech-start. While >0,
+    # the silence-prompt timer in the LLM loop pauses so we don't fire
+    # "हैलो आप वहाँ हैं?" over a customer who's actively mid-sentence.
+    # Cleared once the utterance is transcribed (or stale-cleared after grace).
+    last_speech_started_at: float = 0.0
+
     # Hangup guard — set synchronously before first await to prevent double-hangup
     _hangup_started: bool = False
 

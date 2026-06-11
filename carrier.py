@@ -64,11 +64,19 @@ async def make_call(
     if amd_callback_url:
         payload.update({
             "machine_detection":         "true",
+            # async_amd=true makes Plivo run AMD analysis IN PARALLEL with
+            # the answer_url WebSocket — no blocking wait for the verdict.
+            # The "human" / "machine_*" verdict still arrives async via
+            # machine_detection_url. Our _amd_monitor in call_handler
+            # already handles a mid-call machine verdict (aborts greeting
+            # + switches to voicemail mode). Saves the ~2s the default
+            # synchronous AMD would have spent gating the greeting.
+            "async_amd":                 "true",
             "machine_detection_time":    str(amd_detection_time_ms),
             "machine_detection_url":     amd_callback_url,
             "machine_detection_method":  "POST",
         })
-        log.info("[AMD] enabled — detection_time=%d ms callback=%s",
+        log.info("[AMD] enabled (async_amd) — detection_time=%d ms callback=%s",
                  amd_detection_time_ms, amd_callback_url)
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.post(
