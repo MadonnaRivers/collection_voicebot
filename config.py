@@ -39,12 +39,11 @@ SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
 SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
-# gpt-4.1-mini chosen for best Hindi instruction-following + JSON adherence.
-# Live tests showed gpt-4o-mini mis-rejected valid in-window Hindi dates
-# (caught by _maybe_rescue_in_window_date safety net) and didn't measurably
-# improve TTFS for our 1500-token system prompt. Set LLM_MODEL=gpt-4o-mini
-# in .env to try the cheaper model on specific calls.
-LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1-mini")
+# gpt-4.1 (full) — significantly better instruction-following, JSON adherence,
+# and Hindi reasoning than the -mini variants. ~7-8× more expensive but worth
+# it for production reliability on noisy real calls (where STT garble + LLM
+# weakness compound). Set LLM_MODEL=gpt-4.1-mini in .env to fall back.
+LLM_MODEL      = os.getenv("LLM_MODEL",      "gpt-4.1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 # Orchestrator (voice dialogue brain)
