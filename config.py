@@ -29,14 +29,17 @@ SARVAM_STT_REST_URL   = "https://api.sarvam.ai/speech-to-text"
 SARVAM_TTS_STREAM_URL = "https://api.sarvam.ai/text-to-speech/stream"
 SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 
-# Hindi-native transcription model. saarika v3 does not exist; v2.5 is the
-# latest in the saarika line. (saaras:v3 is newer but translates to English by
-# default — we stay on saarika for Devanagari output that matches the prompt.)
-SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saarika:v2.5")
+# Sarvam STT — saaras:v2.5 is the current best for noisy telephony + regional
+# accents. Sarvam has deprecated the older saarika:v2.5; saaras is trained on
+# 1M+ hours of real Indian speech (8kHz call-center audio, code-mixing,
+# multi-speaker). It transcribes in the source language (Devanagari for Hindi)
+# when a language_code is supplied — exactly what our Hindi prompt needs.
+SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saaras:v2.5")
 SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
-# bulbul:v3 formal female speakers: simran (default here), ishita, ritu, priya,
-# pooja, neha, kavya, shreya, roopa. (v2-only speakers like anushka won't work.)
-SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "simran")
+# bulbul:v3 female voices: ishita (Sarvam's recommended default — best across
+# Hindi/Telugu/Kannada accents), priya, simran, ritu, neha, pooja, kavya,
+# shreya, roopa, suhani, kavitha, rupali, tanya, shruti.
+SARVAM_VOICE        = os.getenv("SARVAM_VOICE",        "ishita")
 
 # ── LLM ───────────────────────────────────────────────────────────────────────
 # gpt-4.1 (full) — significantly better instruction-following, JSON adherence,
