@@ -29,11 +29,12 @@ SARVAM_STT_REST_URL   = "https://api.sarvam.ai/speech-to-text"
 SARVAM_TTS_STREAM_URL = "https://api.sarvam.ai/text-to-speech/stream"
 SARVAM_TTS_REST_URL   = "https://api.sarvam.ai/text-to-speech"   # fallback only
 
-# Sarvam STT — saaras:v2.5 is the current best for noisy telephony + regional
-# accents. Sarvam has deprecated the older saarika:v2.5; saaras is trained on
-# 1M+ hours of real Indian speech (8kHz call-center audio, code-mixing,
-# multi-speaker). It transcribes in the source language (Devanagari for Hindi)
-# when a language_code is supplied — exactly what our Hindi prompt needs.
+# Sarvam STT — saaras:v3 is the current SOTA: 19% WER on IndicVoices (vs
+# 22% on v2.5), native streaming with <150 ms time-to-first-token, 23
+# languages, 8 kHz telephony-optimized, supports codemix mode for
+# Hinglish. saarika:v2.5 is the legacy model and is scheduled for
+# deprecation; saaras:v2.5 has been removed by Sarvam (returns 4000
+# "invalid model" on connect — see 16:34 prod incident).
 SARVAM_STT_MODEL    = os.getenv("SARVAM_STT_MODEL",    "saaras:v3")
 SARVAM_STT_LANGUAGE = os.getenv("SARVAM_STT_LANGUAGE", "hi-IN")
 # bulbul:v3 female voices: ishita (Sarvam's recommended default — best across
@@ -151,10 +152,12 @@ STT_MAX_UTTERANCE_SEC   = float(os.getenv("STT_MAX_UTTERANCE_SEC",  "25"))
 STT_BARGE_IN_MIN_FRAMES = int(os.getenv("STT_BARGE_IN_MIN_FRAMES", "12"))
 
 # TTS concurrency — global cap on simultaneous Sarvam TTS requests across all
-# active calls. With Sarvam Pro + 100 concurrent calls and ~2 in-flight
-# sentences per call (pipelined), 200 is a safe ceiling. tts.py reads the env
-# var directly; this is the documented default.
-TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "80"))
+# active calls. Sarvam in practice chokes well below the published per-plan
+# limits: 32 concurrent dials in a single second made greetings take 8-18 s
+# (logs/aditi.log, 12:30 batch). 16 keeps comfortable headroom on the Pro
+# plan and lets the retry+backoff in tts.py recover on the occasional 429.
+# Raise carefully and only after observing real Sarvam throughput at scale.
+TTS_CONCURRENCY      = int(os.getenv("TTS_CONCURRENCY",      "16"))
 TTS_MAX_RETRIES      = int(os.getenv("TTS_MAX_RETRIES",      "4"))
 TTS_READ_TIMEOUT_SEC = float(os.getenv("TTS_READ_TIMEOUT_SEC","20"))
 

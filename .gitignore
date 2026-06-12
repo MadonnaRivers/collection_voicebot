@@ -5,3 +5,4 @@ __pycache__/
 .claude/
 transcripts/
 recordings/
+ngrok.log

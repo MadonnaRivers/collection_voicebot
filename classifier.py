@@ -10,8 +10,17 @@ from datetime import date as _date
 
 from clients import oai_llm
 from config import LLM_MODEL
+from call_webhook import _INTERNAL_CTX_KEYS
 
 log = logging.getLogger("aditi")
+
+
+def _ctx_for_prompt(ctx: dict[str, str]) -> dict[str, str]:
+    """Strip internal/transient bookkeeping keys before serializing ctx into
+    the finalize_call_variables LLM prompt. Keeps the prompt focused on
+    real call data — out_of_window_attempts, silence_count, _inserted_at
+    etc. only add noise the LLM has to wade through."""
+    return {k: v for k, v in ctx.items() if k not in _INTERNAL_CTX_KEYS}
 
 
 def _backfill_from_ctx(result: dict, hangup_reason: str, ctx: dict[str, str]) -> None:
@@ -86,7 +95,7 @@ async def finalize_call_variables(
             f"Overdue EMI: ₹{emi} (original due {emi_date})\n"
             f"Hangup reason (system): {hangup_reason}\n\n"
             f"Final merged context JSON (key facts the agent stored):\n"
-            f"{json.dumps(dict(ctx), ensure_ascii=False, indent=2)}\n\n"
+            f"{json.dumps(_ctx_for_prompt(ctx), ensure_ascii=False, indent=2)}\n\n"
             f"Full dialogue transcript (Hindi/Hinglish):\n{transcript_text or '(no transcript)'}\n\n"
             "Extract CRM-ready fields from the transcript + context. Output ONE JSON object\n"
             "with ONLY the applicable fields below. Use exact key names. Output ONLY valid JSON.\n"

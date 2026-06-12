@@ -18,6 +18,13 @@ recording_pending: dict[str, str] = {}
 #         | "machine_end_other" | "fax" | "unknown" | other strings.
 amd_results: dict[str, str] = {}
 
+# Optional per-call asyncio.Event registered by the media-stream handler so
+# /amd-callback can wake the AMD monitor the instant Plivo posts a verdict
+# instead of forcing the monitor to poll every 100 ms. Populated by
+# call_handler before _amd_monitor starts; cleared in the same finally block.
+import asyncio as _asyncio
+amd_events: dict[str, "_asyncio.Event"] = {}
+
 @dataclasses.dataclass
 class CallSession:
     ctx:             dict[str, str]  # customer data + dynamic per-turn values

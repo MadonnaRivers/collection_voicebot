@@ -89,28 +89,45 @@ class RestStt:
         async with self._connect_lock:
             if self._ws is not None:
                 return True
-            try:
-                kwargs: dict[str, str] = {
-                    "language_code": SARVAM_STT_LANGUAGE,
-                    "model": SARVAM_STT_MODEL,
-                    "sample_rate": "16000",
-                    "input_audio_codec": "wav",
-                    "vad_signals": "false",
-                    "flush_signal": "true",
-                }
-                if SARVAM_STT_MODEL.startswith("saaras"):
-                    kwargs["mode"] = "transcribe"
-                self._ws_cm = self._client.speech_to_text_streaming.connect(**kwargs)
-                self._ws = await self._ws_cm.__aenter__()
-                # Start the single continuous receiver that dispatches
-                # transcripts as they arrive — never block a flush on recv().
-                self._recv_task = asyncio.create_task(self._recv_loop())
-                log.info("[STT] streaming websocket connected")
-            except Exception as exc:
-                self._ws = None
-                self._ws_cm = None
-                log.error("[STT] streaming connect failed: %s", exc)
-                return False
+            kwargs: dict[str, str] = {
+                "language_code": SARVAM_STT_LANGUAGE,
+                "model": SARVAM_STT_MODEL,
+                "sample_rate": "16000",
+                "input_audio_codec": "wav",
+                "vad_signals": "false",
+                "flush_signal": "true",
+            }
+            if SARVAM_STT_MODEL.startswith("saaras"):
+                kwargs["mode"] = "transcribe"
+            # Retry once after a short backoff so a transient network blip
+            # at WS-connect time doesn't silence STT for the rest of the
+            # call. Two attempts total — beyond that we give up and the
+            # caller will retry on the next utterance anyway.
+            last_exc: Exception | None = None
+            for attempt in (1, 2):
+                if self._closed:
+                    return False
+                try:
+                    self._ws_cm = self._client.speech_to_text_streaming.connect(**kwargs)
+                    self._ws = await self._ws_cm.__aenter__()
+                    # Start the single continuous receiver that dispatches
+                    # transcripts as they arrive — never block a flush on recv().
+                    self._recv_task = asyncio.create_task(self._recv_loop())
+                    if attempt > 1:
+                        log.info("[STT] streaming websocket connected (attempt %d)", attempt)
+                    else:
+                        log.info("[STT] streaming websocket connected")
+                    return True
+                except Exception as exc:
+                    last_exc = exc
+                    self._ws = None
+                    self._ws_cm = None
+                    if attempt == 1:
+                        log.warning("[STT] connect attempt 1 failed: %s — retrying in 0.5 s", exc)
+                        await asyncio.sleep(0.5)
+                    else:
+                        log.error("[STT] streaming connect failed after retry: %s", exc)
+            return False
         return True
 
     async def _recv_loop(self) -> None:

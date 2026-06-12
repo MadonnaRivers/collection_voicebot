@@ -10,7 +10,8 @@ Real-time strategy:
 
 Concurrency:
   • _TTS_SEM caps simultaneous Sarvam requests across all calls.
-    Set TTS_CONCURRENCY in .env (default 15). Raise this when on a higher Sarvam plan.
+    Set TTS_CONCURRENCY in .env (default 16). Raise this when on a higher
+    Sarvam plan and after confirming real throughput.
   • 429 responses trigger exponential backoff + retry before giving up.
 """
 from __future__ import annotations
@@ -29,12 +30,12 @@ log = logging.getLogger("aditi")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global TTS concurrency limiter
-# Caps simultaneous Sarvam requests so rate limits aren't hit in bulk.
-# Default 200 — sized for Sarvam Pro plan running 100 concurrent calls
-# (~2 in-flight sentences per call from pipelined sentence streaming).
-# Lower TTS_CONCURRENCY in .env on starter plans (e.g. 30) to avoid 429s.
+# Caps simultaneous Sarvam TTS requests across ALL active calls so the
+# greeting doesn't sit in a queue for 8-18 s under burst dial load. Default
+# 16 matches what Sarvam Pro reliably serves; raise only after observing
+# real throughput. Lower further (e.g. 8) on starter plans to dodge 429s.
 # ─────────────────────────────────────────────────────────────────────────────
-_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "80"))
+_TTS_CONCURRENCY = int(os.getenv("TTS_CONCURRENCY", "16"))
 _TTS_SEM: asyncio.Semaphore | None = None
 
 def _sem() -> asyncio.Semaphore:

@@ -326,7 +326,7 @@ async def amd_callback(request: Request) -> JSONResponse:
     media-stream handler polls this map and switches to voicemail mode
     the moment a machine verdict shows up.
     """
-    from session import amd_results
+    from session import amd_results, amd_events
     try:
         form_data = await request.form()
         form = dict(form_data)
@@ -355,6 +355,11 @@ async def amd_callback(request: Request) -> JSONResponse:
     amd_results[call_uuid] = verdict
     log.info("[AMD] %s → %s  (Machine=%r AmdStatus=%r Event=%r)",
              call_uuid, verdict, machine or "-", amd_stat or "-", event or "-")
+    # Wake the per-call AMD monitor immediately instead of making it poll
+    # every 100 ms. The monitor registers the event before starting.
+    ev = amd_events.get(call_uuid)
+    if ev is not None:
+        ev.set()
     # TTL cap — keep at most 2000 entries to bound memory in long runs.
     if len(amd_results) > 2000:
         amd_results.pop(next(iter(amd_results)), None)

@@ -36,7 +36,7 @@ from denoiser import StreamDenoiser
 from llm_orchestrator import stream_conversation_turn, conversation_to_storage_text
 from scripts import build_opening_greeting, build_voicemail_message
 from utils import ist_now
-from session import CallSession, pending_ctx, amd_results
+from session import CallSession, pending_ctx, amd_results, amd_events
 from stt import RestStt
 from tts import tts_speak
 
@@ -301,24 +301,38 @@ async def media_stream(ws: WebSocket) -> None:
             asyncio.create_task(hangup("voicemail_left"))
 
         async def _amd_monitor() -> None:
-            """Poll session.amd_results for a 'machine' verdict for up to
-            AMD_MONITOR_SEC seconds. Plivo's AMD callback fires ONLY when
-            it detects a machine (humans never trigger it), so the absence
-            of a verdict is treated as 'probably human' — we don't wait for
-            it before greeting."""
-            if not AMD_ENABLED:
+            """Wait up to ~8 s (Plivo's AMD detection window) for a 'machine'
+            verdict. Driven by an asyncio.Event set in /amd-callback — no
+            polling, so 100 concurrent calls don't burn 1000 task switches/
+            second just watching for a verdict. Plivo's callback ONLY fires
+            for machine-detected calls (humans never trigger it), so the
+            absence of an event is treated as 'probably human'."""
+            if not AMD_ENABLED or not sess.call_sid:
                 return
-            deadline = time.monotonic() + 8.0   # cover Plivo's 3-5s detection window
-            while time.monotonic() < deadline and not sess.done and not _voicemail_fired[0]:
-                v = amd_results.get(sess.call_sid, "")
-                if v == "machine":
+            ev = amd_events.get(sess.call_sid)
+            if ev is None:
+                ev = asyncio.Event()
+                amd_events[sess.call_sid] = ev
+            # AMD-callback may have already fired BEFORE we registered the
+            # event (Plivo can deliver fast). If a verdict is already in the
+            # results map, set the event ourselves so we don't block on it.
+            if amd_results.get(sess.call_sid):
+                ev.set()
+            try:
+                try:
+                    await asyncio.wait_for(ev.wait(), timeout=8.0)
+                except asyncio.TimeoutError:
+                    return
+                if sess.done or _voicemail_fired[0]:
+                    return
+                if amd_results.get(sess.call_sid, "") == "machine":
                     log.info("[AMD] mid-call machine verdict — switching to voicemail")
                     if AMD_LEAVE_MESSAGE:
                         await _speak_voicemail()
                     else:
                         asyncio.create_task(hangup("voicemail"))
-                    return
-                await asyncio.sleep(0.1)
+            finally:
+                amd_events.pop(sess.call_sid, None)
 
         # ── Barge-in (driven by sustained VAD speech-start) ─────────────────
         def _barge_in_allowed() -> bool:
