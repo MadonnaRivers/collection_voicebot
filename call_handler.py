@@ -570,6 +570,34 @@ async def media_stream(ws: WebSocket) -> None:
             finally:
                 abort[0] = True
                 if not sess._hangup_started and not sess.done and sess.call_sid:
+                    # Drain any in-flight STT before declaring carrier_disconnect.
+                    # Without this, a customer's last-second utterance (PTP /
+                    # "haan kar dunga" / "kal pay kar dunga") is logged as
+                    # [USER] but never reaches llm_history because the LLM
+                    # loop has already exited — so finalize_call_variables
+                    # sees an empty conversation and emits "no customer
+                    # response captured". Production logs from the 06:30
+                    # batch (VIKAS, 234b5430) showed 11 s of customer audio
+                    # lost exactly this way.
+                    try:
+                        await rest_stt.drain(timeout=1.5)
+                    except Exception as exc:
+                        log.debug("STT drain error: %s", exc)
+                    # Sweep any utterances still queued into llm_history so
+                    # the post-call summarizer sees them. on_transcript may
+                    # have pushed late transcripts here after the LLM loop
+                    # stopped consuming.
+                    late_count = 0
+                    while True:
+                        try:
+                            late = utt_q.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                        if late:
+                            sess.llm_history.append({"role": "user", "content": late})
+                            late_count += 1
+                    if late_count:
+                        log.info("[CALL] preserved %d late utterance(s) before hangup", late_count)
                     asyncio.create_task(hangup("carrier_disconnect"))
 
         # ── LLM conversation loop ──────────────────────────────────────────

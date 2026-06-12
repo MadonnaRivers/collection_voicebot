@@ -258,6 +258,24 @@ class RestStt:
             return False
         return (time.monotonic() - self._last_flush_at) < max_age
 
+    async def drain(self, timeout: float = 1.5) -> None:
+        """Flush any buffered utterance and wait briefly for the in-flight
+        Sarvam transcribe(s) to return. Called from call_handler's carrier-
+        disconnect path so a last-second customer PTP isn't dropped in the
+        race between WS close and Sarvam returning the final transcript.
+        timeout caps the wait — beyond that we assume Sarvam lost it and
+        let hangup proceed."""
+        if self._closed:
+            return
+        if self._in_speech and self._buf:
+            try:
+                await self._flush()
+            except Exception as exc:
+                log.debug("[STT] drain flush error: %s", exc)
+        deadline = time.monotonic() + timeout
+        while self.pending_recent() and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+
     async def close(self) -> None:
         self._closed = True
         if self._in_speech and self._buf:
