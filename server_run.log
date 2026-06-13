@@ -1,0 +1,548 @@
+11:59:13 [INFO] aditi — aditi — Dialing +917977365303 …
+INFO:     Started server process [35948]
+INFO:     Waiting for application startup.
+11:59:14 [INFO] aditi — Logging active: info_log=logs/aditi.log error_log=logs/aditi_error.log
+11:59:14 [INFO] aditi — Recording callback URL: https://a6b6-2405-201-31-603f-70cc-ad0b-ba65-412f.ngrok-free.app/recording-callback
+11:59:14 [INFO] aditi — [WARMUP] connection pre-warmed: Sarvam TTS
+11:59:14 [INFO] aditi — [WARMUP] connection pre-warmed: Sarvam STT
+11:59:14 [INFO] aditi — [WARMUP] connection pre-warmed: OpenAI
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:5050 (Press CTRL+C to quit)
+11:59:16 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+11:59:16 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+11:59:16 [INFO] aditi — Plivo call request_uuid: 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58
+11:59:16 [INFO] aditi — Call SID: 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58
+11:59:21 [INFO] aditi — pending_ctx rekeyed: 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58 \u2192 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58
+11:59:21 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.4.233:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.220.174', 0) - "WebSocket /media-stream" [accepted]
+11:59:21 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+11:59:21 [INFO] aditi — [PLIVO] call connected — Stream=f9214ea4-72a0-46f3-a8c8-c0879296fa53 Call=6e3ae056-2ea7-422d-8dbc-2b04a0e43b58
+11:59:21 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+11:59:21 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "da60dbb8-e551-484e-964a-b9775446be9a",
+  "message": "async api spawned"
+}
+
+11:59:21 [INFO] aditi — [PLIVO] recording started — call=6e3ae056-2ea7-422d-8dbc-2b04a0e43b58 recording_id=
+11:59:29 [INFO] aditi — [BOT-TTS] done in 8251 ms | \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 
+11:59:30 [INFO] aditi — [STT] streaming websocket connected
+11:59:30 [INFO] aditi — [STT] transcribing — 620 ms utterance
+11:59:30 [INFO] aditi — [STT] speech detected
+11:59:36 [INFO] aditi — [STT] transcribing — 6260 ms utterance
+11:59:37 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0902 \u090f\u0915\u094d\u091a\u0941\u0905\u0932\u0940 \u092e\u0947\u0930\u0947 \u092c\u0948\u0902\u0915 \u092e\u0947\u0902 \u0938\u0947 \u092a\u0948\u0938\u0947 \u0915\u091f \u0917\u090f \u0925\u0947 \u0911\u0932\u0930\u0947\u0921\u0940\u0964
+11:59:37 [INFO] aditi — [USER] \u092e\u0948\u0902 \u090f\u0915\u094d\u091a\u0941\u0905\u0932\u0940 \u092e\u0947\u0930\u0947 \u092c\u0948\u0902\u0915 \u092e\u0947\u0902 \u0938\u0947 \u092a\u0948\u0938\u0947 \u0915\u091f \u0917\u090f \u0925\u0947 \u0911\u0932\u0930\u0947\u0921\u0940\u0964
+11:59:37 [INFO] aditi — [STT] transcribed: \u0935\u094b \u090f\u0915 \u092c\u093e\u0930 \u091a\u0947\u0915 \u0915\u0930 \u0932\u094b \u0906\u092a \u0932\u094b\u0917\u0964
+11:59:37 [INFO] aditi — [USER] \u0935\u094b \u090f\u0915 \u092c\u093e\u0930 \u091a\u0947\u0915 \u0915\u0930 \u0932\u094b \u0906\u092a \u0932\u094b\u0917\u0964
+11:59:37 [INFO] aditi — [STT] speech detected
+11:59:37 [INFO] aditi — [USER MERGED] 2 fragments \u2192 \u092e\u0948\u0902 \u090f\u0915\u094d\u091a\u0941\u0905\u0932\u0940 \u092e\u0947\u0930\u0947 \u092c\u0948\u0902\u0915 \u092e\u0947\u0902 \u0938\u0947 \u092a\u0948\u0938\u0947 \u0915\u091f \u0917\u090f \u0925\u0947 \u0911\u0932\u0930\u0947\u0921\u0940\u0964 \u0935\u094b \u090f\u0915 \u092c\u093e\u0930 \u091a\u0947\u0915 \u0915\u0930 \u0932\u094b \u0906\u092a \u0932\u094b\u0917\u0964
+11:59:37 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+11:59:38 [INFO] aditi — [STT] transcribing — 1020 ms utterance
+11:59:40 [INFO] aditi — [BOT-TTS] done in 2957 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+11:59:40 [INFO] aditi — [BOT] \u0915\u093f\u0938 date \u0915\u094b payment \u0915\u093f\u092f\u093e \u0925\u093e?
+11:59:40 [INFO] aditi — [STT] speech detected
+11:59:41 [INFO] aditi — [STT] transcribing — 940 ms utterance
+11:59:41 [INFO] aditi — [STT] speech detected
+11:59:42 [INFO] aditi — [STT] transcribing — 640 ms utterance
+11:59:42 [INFO] aditi — [BOT-TTS] done in 1736 ms | \u0915\u093f\u0938 date \u0915\u094b payment \u0915\u093f\u092f\u093e \u0925\u093e?
+11:59:43 [INFO] aditi — [STT] speech detected
+11:59:48 [INFO] aditi — [STT] transcribing — 5680 ms utterance
+11:59:49 [INFO] aditi — [STT] speech detected
+11:59:49 [INFO] aditi — [STT] transcribed: \u092e\u0947\u0930\u093e \u092a\u093f\u091b\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0939\u0941\u0906 \u0925\u093e, \u092e\u0947\u0930\u0947 \u092c\u0948\u0902\u0915 \u0905\u0915\u093e\u0909\u0902\u091f \u0915\u0947 \u092a\u0948\u0938\u0947 \u091a\u0932\u0947 \u0917\u090f \u0925\u0947\u0964
+11:59:49 [INFO] aditi — [USER] \u092e\u0947\u0930\u093e \u092a\u093f\u091b\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0939\u0941\u0906 \u0925\u093e, \u092e\u0947\u0930\u0947 \u092c\u0948\u0902\u0915 \u0905\u0915\u093e\u0909\u0902\u091f \u0915\u0947 \u092a\u0948\u0938\u0947 \u091a\u0932\u0947 \u0917\u090f \u0925\u0947\u0964
+11:59:49 [INFO] aditi — [STT] transcribing — 660 ms utterance
+11:59:50 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+11:59:53 [INFO] aditi — [STT] speech detected
+11:59:54 [INFO] aditi — [BOT-TTS] done in 4060 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+11:59:54 [INFO] aditi — [BOT] \u0914\u0930 \u0915\u093f\u0938 mode \u0938\u0947 payment \u0915\u093f\u092f\u093e \u0925\u093e — UPI, NEFT, \u092f\u093e cash?
+11:59:56 [INFO] aditi — [STT] transcribing — 3460 ms utterance
+11:59:57 [INFO] aditi — [STT] speech detected
+11:59:58 [INFO] aditi — [STT] transcribing — 1180 ms utterance
+11:59:59 [INFO] aditi — [STT] speech detected
+11:59:59 [INFO] aditi — [BOT-TTS] done in 5358 ms | \u0914\u0930 \u0915\u093f\u0938 mode \u0938\u0947 payment \u0915\u093f\u092f\u093e \u0925\u093e — UPI, NEFT, \u092f\u093e cash?
+12:00:04 [INFO] aditi — [STT] transcribing — 5240 ms utterance
+12:00:04 [INFO] aditi — [STT] transcribed: \u092e\u0947\u0930\u0947 \u092c\u0948\u0915 \u0938\u0947 \u0915\u091f \u0906\u0924\u093e \u0939\u0948\u0964
+12:00:04 [INFO] aditi — [USER] \u092e\u0947\u0930\u0947 \u092c\u0948\u0915 \u0938\u0947 \u0915\u091f \u0906\u0924\u093e \u0939\u0948\u0964
+12:00:05 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:00:06 [INFO] aditi — [STT] speech detected
+12:00:07 [INFO] aditi — [STT] transcribing — 1640 ms utterance
+12:00:07 [INFO] aditi — [BOT-TTS] done in 2474 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:00:07 [INFO] aditi — [BOT] Thank you Rahul \u091c\u0940\u0964 \u0939\u092e\u0947\u0902 \u0906\u092a\u0915\u0940 payment \u0915\u0940 details \u092e\u093f\u0932 \u0917\u0908 \u0939\u0948\u0902\u0964 \u0939\u092e verify \u0915\u0930\u0915\u0947 records update \u0915\u0930 \u0926\u0947\u0902\u0917\u0947\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:00:15 [INFO] aditi — [BOT-TTS] done in 7853 ms | Thank you Rahul \u091c\u0940\u0964 \u0939\u092e\u0947\u0902 \u0906\u092a\u0915\u0940 payment \u0915\u0940 details \u092e\u093f\u0932 \u0917\u0908 \u0939\u0948\u0902\u0964
+12:00:15 [INFO] aditi — [CALL] LLM loop ended (phase=already_paid, turns=3)
+12:00:15 [INFO] aditi — [CALL] hangup — reason=already_paid_noted
+12:00:15 [INFO] aditi — [CALL] media stream handler closed
+12:00:17 [INFO] aditi — CALL_VARS {'summary': 'Customer Rahul stated he already paid the EMI last month via bank account debit.', 'already_paid_date': '2026-05-13', 'already_paid_mode': 'netbanking'}
+12:00:17 [INFO] aditi — Call summary persisted (call=6e3ae056-2ea7-422d-8dbc-2b04a0e43b58)
+12:00:19 [INFO] aditi — Plivo call 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58 terminated
+12:00:20 [INFO] aditi — [HANGUP] 6e3ae056-2ea7-422d-8dbc-2b04a0e43b58 — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=59s source='API Request'
+12:00:20 [INFO] aditi — [HANGUP] transcript already exists (20260613_115921_161886_6e3ae056-2ea7-422d-8dbc-2b04a0e43b58.jsonl) — connected call, skipping synth
+INFO:     3.7.4.233:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:01:22 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:01:22 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:01:22 [INFO] aditi — Plivo call request_uuid: 36293c1d-0cab-43ab-a044-4bc2bb8be3a7
+12:01:22 [INFO] aditi — [PLIVO] dialed +916397237003 — request_uuid=36293c1d-0cab-43ab-a044-4bc2bb8be3a7
+INFO:     127.0.0.1:61247 - "POST /make-call HTTP/1.1" 200 OK
+12:01:33 [INFO] aditi — pending_ctx rekeyed: 36293c1d-0cab-43ab-a044-4bc2bb8be3a7 \u2192 36293c1d-0cab-43ab-a044-4bc2bb8be3a7
+12:01:33 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.4.233:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:01:33 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:01:33 [INFO] aditi — [PLIVO] call connected — Stream=98d199c3-c380-412d-a7a8-191b0d6d1bc3 Call=36293c1d-0cab-43ab-a044-4bc2bb8be3a7
+12:01:33 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:01:34 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "595aa641-36b2-4d47-bdc7-839357ee18e3",
+  "message": "async api spawned"
+}
+
+12:01:34 [INFO] aditi — [PLIVO] recording started — call=36293c1d-0cab-43ab-a044-4bc2bb8be3a7 recording_id=
+12:01:41 [INFO] aditi — [BOT-TTS] done in 7690 ms | \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 
+12:01:42 [INFO] aditi — [STT] speech detected
+12:01:45 [INFO] aditi — [STT] streaming websocket connected
+12:01:45 [INFO] aditi — [STT] transcribing — 3980 ms utterance
+12:01:46 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0902\u0928\u0947 \u0908\u092f\u0942\u0906\u0908 \u0911\u0932\u0930\u0947\u0921\u0940 \u092a\u0947 \u0915\u0930 \u0926\u093f\u092f\u093e, \u0906\u092a \u0915\u0949\u0932 \u0915\u094d\u092f\u094b\u0902 \u0915\u0930 \u0930\u0939\u0947 \u0939\u094b \u092e\u0947\u0930\u0947 \u0915\u094b?
+12:01:46 [INFO] aditi — [USER] \u092e\u0948\u0902\u0928\u0947 \u0908\u092f\u0942\u0906\u0908 \u0911\u0932\u0930\u0947\u0921\u0940 \u092a\u0947 \u0915\u0930 \u0926\u093f\u092f\u093e, \u0906\u092a \u0915\u0949\u0932 \u0915\u094d\u092f\u094b\u0902 \u0915\u0930 \u0930\u0939\u0947 \u0939\u094b \u092e\u0947\u0930\u0947 \u0915\u094b?
+12:01:46 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:01:46 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:01:49 [INFO] aditi — [BOT-TTS] done in 2261 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:01:49 [INFO] aditi — [BOT] \u0915\u093f\u0938 date \u0915\u094b payment \u0915\u093f\u092f\u093e \u0925\u093e?
+12:01:51 [INFO] aditi — [BOT-TTS] done in 1998 ms | \u0915\u093f\u0938 date \u0915\u094b payment \u0915\u093f\u092f\u093e \u0925\u093e?
+12:01:52 [INFO] aditi — [STT] speech detected
+12:01:55 [INFO] aditi — [STT] transcribing — 3920 ms utterance
+12:01:56 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0902\u0928\u0947
+12:01:56 [INFO] aditi — [USER] \u092e\u0948\u0902\u0928\u0947
+12:01:56 [INFO] aditi — [STT] transcribed: 10 \u0924\u093e\u0930\u0940\u0916 \u0915\u094b \u092a\u0947 \u0915\u0930 \u0926\u093f\u092f\u093e \u0925\u093e\u0964
+12:01:56 [INFO] aditi — [USER] 10 \u0924\u093e\u0930\u0940\u0916 \u0915\u094b \u092a\u0947 \u0915\u0930 \u0926\u093f\u092f\u093e \u0925\u093e\u0964
+12:01:56 [INFO] aditi — [USER MERGED] 2 fragments \u2192 \u092e\u0948\u0902\u0928\u0947 10 \u0924\u093e\u0930\u0940\u0916 \u0915\u094b \u092a\u0947 \u0915\u0930 \u0926\u093f\u092f\u093e \u0925\u093e\u0964
+12:01:56 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:01:57 [INFO] aditi — [STT] speech detected
+12:01:59 [INFO] aditi — [STT] transcribing — 1480 ms utterance
+12:02:00 [INFO] aditi — [STT] speech detected
+12:02:00 [INFO] aditi — [BOT-TTS] done in 3741 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:02:00 [INFO] aditi — [BOT] \u0914\u0930 \u0915\u093f\u0938 mode \u0938\u0947 payment \u0915\u093f\u092f\u093e \u0925\u093e — UPI, NEFT, \u092f\u093e cash?
+12:02:02 [INFO] aditi — [STT] transcribing — 2120 ms utterance
+12:02:02 [INFO] aditi — [STT] speech detected
+12:02:03 [INFO] aditi — [STT] transcribing — 1360 ms utterance
+12:02:04 [INFO] aditi — [STT] speech detected
+12:02:04 [INFO] aditi — [BOT-TTS] done in 3974 ms | \u0914\u0930 \u0915\u093f\u0938 mode \u0938\u0947 payment \u0915\u093f\u092f\u093e \u0925\u093e — UPI, NEFT, \u092f\u093e cash?
+12:02:07 [INFO] aditi — [STT] transcribing — 3060 ms utterance
+12:02:07 [INFO] aditi — [STT] transcribed: \u0915\u0948\u091a \u0926\u093f\u092f\u093e \u0925\u093e\u0964
+12:02:07 [INFO] aditi — [USER] \u0915\u0948\u091a \u0926\u093f\u092f\u093e \u0925\u093e\u0964
+12:02:08 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:02:09 [INFO] aditi — [STT] speech detected
+12:02:10 [INFO] aditi — [STT] transcribing — 920 ms utterance
+12:02:10 [INFO] aditi — [BOT-TTS] done in 2438 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:02:10 [INFO] aditi — [BOT] Thank you Rahul \u091c\u0940\u0964 \u0939\u092e\u0947\u0902 \u0906\u092a\u0915\u0940 payment \u0915\u0940 details \u092e\u093f\u0932 \u0917\u0908 \u0939\u0948\u0902\u0964 \u0939\u092e verify \u0915\u0930\u0915\u0947 records update \u0915\u0930 \u0926\u0947\u0902\u0917\u0947\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:02:18 [INFO] aditi — [BOT-TTS] done in 7839 ms | Thank you Rahul \u091c\u0940\u0964 \u0939\u092e\u0947\u0902 \u0906\u092a\u0915\u0940 payment \u0915\u0940 details \u092e\u093f\u0932 \u0917\u0908 \u0939\u0948\u0902\u0964
+12:02:18 [INFO] aditi — [CALL] LLM loop ended (phase=already_paid, turns=3)
+12:02:18 [INFO] aditi — [CALL] hangup — reason=already_paid_noted
+12:02:18 [INFO] aditi — [CALL] media stream handler closed
+12:02:19 [INFO] aditi — CALL_VARS {'summary': 'Customer Rahul stated he already paid the EMI in cash on 2026-06-10.', 'already_paid_date': '2026-06-10', 'already_paid_mode': 'cash'}
+12:02:19 [INFO] aditi — Call summary persisted (call=36293c1d-0cab-43ab-a044-4bc2bb8be3a7)
+12:02:21 [INFO] aditi — Plivo hangup 36293c1d-0cab-43ab-a044-4bc2bb8be3a7 \u2192 already gone (404)
+12:02:22 [INFO] aditi — [HANGUP] 36293c1d-0cab-43ab-a044-4bc2bb8be3a7 — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=48s source='Callee'
+12:02:22 [INFO] aditi — [HANGUP] transcript already exists (20260613_120133_903571_36293c1d-0cab-43ab-a044-4bc2bb8be3a7.jsonl) — connected call, skipping synth
+INFO:     3.7.4.233:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:03:34 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:03:34 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:03:34 [INFO] aditi — Plivo call request_uuid: b20b8d09-7ce6-4dd5-b969-029863426e97
+12:03:34 [INFO] aditi — [PLIVO] dialed +916397237003 — request_uuid=b20b8d09-7ce6-4dd5-b969-029863426e97
+INFO:     127.0.0.1:63240 - "POST /make-call HTTP/1.1" 200 OK
+12:03:44 [INFO] aditi — pending_ctx rekeyed: b20b8d09-7ce6-4dd5-b969-029863426e97 \u2192 b20b8d09-7ce6-4dd5-b969-029863426e97
+12:03:44 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.4.233:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.220.174', 0) - "WebSocket /media-stream" [accepted]
+12:03:44 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:03:44 [INFO] aditi — [PLIVO] call connected — Stream=29321153-9ab3-4e43-8b28-73bd718dfe2d Call=b20b8d09-7ce6-4dd5-b969-029863426e97
+12:03:44 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:03:44 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "a6b571ee-ce75-4d81-acad-05cc819ddd56",
+  "message": "async api spawned"
+}
+
+12:03:44 [INFO] aditi — [PLIVO] recording started — call=b20b8d09-7ce6-4dd5-b969-029863426e97 recording_id=
+12:03:53 [INFO] aditi — [BOT-TTS] done in 8893 ms | \u0928\u092e\u0938\u094d\u0924\u0947 Rahul \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 8,500 
+12:03:54 [INFO] aditi — [STT] streaming websocket connected
+12:03:54 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:03:54 [INFO] aditi — [STT] speech detected
+12:03:57 [INFO] aditi — [STT] transcribing — 3200 ms utterance
+12:03:57 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0902 \u092e\u0940\u091f\u093f\u0902\u0917 \u092e\u0947\u0902 \u0939\u0942\u0901 \u0905\u092d\u0940 \u092c\u093e\u0924 \u0928\u0939\u0940\u0902 \u0915\u0930 \u0938\u0915\u0924\u093e
+12:03:57 [INFO] aditi — [USER] \u092e\u0948\u0902 \u092e\u0940\u091f\u093f\u0902\u0917 \u092e\u0947\u0902 \u0939\u0942\u0901 \u0905\u092d\u0940 \u092c\u093e\u0924 \u0928\u0939\u0940\u0902 \u0915\u0930 \u0938\u0915\u0924\u093e
+12:03:57 [INFO] aditi — [STT] speech detected
+12:03:58 [INFO] aditi — [STT] transcribing — 840 ms utterance
+12:03:59 [INFO] aditi — [STT] speech detected
+12:04:02 [INFO] aditi — [STT] transcribing — 3880 ms utterance
+12:04:02 [INFO] aditi — [STT] transcribed: \u0939\u0947\u0932\u094b \u0939\u0947\u0932\u094b\u0964
+12:04:02 [INFO] aditi — [USER] \u0939\u0947\u0932\u094b \u0939\u0947\u0932\u094b\u0964
+12:04:03 [INFO] aditi — [USER MERGED] 2 fragments \u2192 \u092e\u0948\u0902 \u092e\u0940\u091f\u093f\u0902\u0917 \u092e\u0947\u0902 \u0939\u0942\u0901 \u0905\u092d\u0940 \u092c\u093e\u0924 \u0928\u0939\u0940\u0902 \u0915\u0930 \u0938\u0915\u0924\u093e \u0939\u0947\u0932\u094b \u0939\u0947\u0932\u094b\u0964
+12:04:03 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:04:03 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:04:04 [INFO] aditi — [STT] speech detected
+12:04:05 [INFO] aditi — [BOT-TTS] done in 2467 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:04:05 [INFO] aditi — [BOT] \u0920\u0940\u0915 \u0939\u0948 Rahul \u091c\u0940, \u0938\u092e\u091d \u0930\u0939\u0940 \u0939\u0942\u0901\u0964 \u0939\u092e \u0906\u092a\u0915\u094b \u0925\u094b\u0921\u093c\u0940 \u0926\u0947\u0930 \u092c\u093e\u0926 call \u0915\u0930\u0947\u0902\u0917\u0947\u0964 Please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 EMI pay \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f penalty \u0938\u0947 \u092c\u091a\u0947\u0902\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:04:14 [INFO] aditi — [BOT-TTS] done in 9093 ms | \u0920\u0940\u0915 \u0939\u0948 Rahul \u091c\u0940, \u0938\u092e\u091d \u0930\u0939\u0940 \u0939\u0942\u0901\u0964 \u0939\u092e \u0906\u092a\u0915\u094b \u0925\u094b\u0921\u093c\u0940 \u0926\u0947\u0930 \u092c\u093e\u0926 call \u0915\u0930\u0947
+12:04:14 [INFO] aditi — [CALL] LLM loop ended (phase=callback_later, turns=1)
+12:04:14 [INFO] aditi — [CALL] hangup — reason=callback_requested
+12:04:14 [INFO] aditi — [STT] transcribing — 1180 ms utterance
+12:04:14 [INFO] aditi — [CALL] media stream handler closed
+12:04:16 [INFO] aditi — CALL_VARS {'summary': 'Customer Rahul requested a callback as he was busy and could not discuss EMI payment during the call.'}
+12:04:16 [INFO] aditi — Call summary persisted (call=b20b8d09-7ce6-4dd5-b969-029863426e97)
+12:04:17 [INFO] aditi — Plivo call b20b8d09-7ce6-4dd5-b969-029863426e97 terminated
+12:04:19 [INFO] aditi — [HANGUP] b20b8d09-7ce6-4dd5-b969-029863426e97 — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=34s source='API Request'
+12:04:19 [INFO] aditi — [HANGUP] transcript already exists (20260613_120344_370517_b20b8d09-7ce6-4dd5-b969-029863426e97.jsonl) — connected call, skipping synth
+INFO:     3.7.220.174:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:13:33 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:13:33 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:13:33 [INFO] aditi — Plivo call request_uuid: 0bb5e0f8-b4dc-4abe-9155-c507ac0b3246
+12:13:33 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=0bb5e0f8-b4dc-4abe-9155-c507ac0b3246
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:13:48 [INFO] aditi — pending_ctx rekeyed: 0bb5e0f8-b4dc-4abe-9155-c507ac0b3246 \u2192 0bb5e0f8-b4dc-4abe-9155-c507ac0b3246
+12:13:48 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:13:48 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:13:48 [INFO] aditi — [PLIVO] call connected — Stream=a3af39fc-8407-4467-a601-2856783ee365 Call=0bb5e0f8-b4dc-4abe-9155-c507ac0b3246
+12:13:48 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:13:48 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "bf68f261-7dad-4c18-adcc-c75872727a01",
+  "message": "async api spawned"
+}
+
+12:13:48 [INFO] aditi — [PLIVO] recording started — call=0bb5e0f8-b4dc-4abe-9155-c507ac0b3246 recording_id=
+12:13:56 [INFO] aditi — [BOT-TTS] done in 8180 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:13:57 [INFO] aditi — [STT] streaming websocket connected
+12:13:57 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:13:58 [INFO] aditi — [STT] speech detected
+12:14:03 [INFO] aditi — [STT] transcribing — 5520 ms utterance
+12:14:03 [INFO] aditi — [STT] transcribed: \u092e\u0947\u0930\u093e \u092c\u0948\u0902\u0915 \u092e\u0947\u0902 \u0905\u092e\u093e\u0909\u0902\u091f \u0911\u0932\u0930\u0947\u0921\u0940 \u0939\u0948, \u0906\u092a \u0932\u0947 \u0932\u0940\u091c\u093f\u090f \u092a\u0948\u0938\u093e\u0964
+12:14:03 [INFO] aditi — [USER] \u092e\u0947\u0930\u093e \u092c\u0948\u0902\u0915 \u092e\u0947\u0902 \u0905\u092e\u093e\u0909\u0902\u091f \u0911\u0932\u0930\u0947\u0921\u0940 \u0939\u0948, \u0906\u092a \u0932\u0947 \u0932\u0940\u091c\u093f\u090f \u092a\u0948\u0938\u093e\u0964
+12:14:04 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:14:07 [INFO] aditi — [STT] speech detected
+12:14:07 [INFO] aditi — [BOT-TTS] done in 3007 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:14:07 [INFO] aditi — [BOT] \u0905\u0917\u0930 \u0906\u092a \u0906\u091c \u0939\u0940 \u092a\u0942\u0930\u0940 EMI pay \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902 \u0924\u094b please SMS \u092e\u0947\u0902 \u092d\u0947\u091c\u0947 \u0917\u090f payment link \u0915\u093e use \u0915\u0940\u091c\u093f\u090f\u0964 \u0915\u094d\u092f\u093e \u0906\u092a \u0906\u091c \u0939\u0940 payment \u0915\u0930 \u0926\u0947\u0902\u0917\u0947?
+12:14:08 [INFO] aditi — [STT] transcribing — 2040 ms utterance
+12:14:10 [INFO] aditi — [STT] speech detected
+12:14:13 [INFO] aditi — [STT] transcribing — 2460 ms utterance
+12:14:14 [INFO] aditi — [STT] speech detected
+12:14:15 [INFO] aditi — [BOT-TTS] done in 8001 ms | \u0905\u0917\u0930 \u0906\u092a \u0906\u091c \u0939\u0940 \u092a\u0942\u0930\u0940 EMI pay \u0915\u0930 \u0938\u0915\u0924\u0947 \u0939\u0948\u0902 \u0924\u094b please SMS \u092e\u0947\u0902 \u092d\u0947\u091c\u0947
+12:14:18 [INFO] aditi — [STT] transcribing — 3540 ms utterance
+12:14:19 [INFO] aditi — [STT] speech detected
+12:14:21 [INFO] aditi — [STT] transcribing — 2600 ms utterance
+12:14:22 [INFO] aditi — [STT] transcribed: \u0920\u0940\u0915 \u0939\u0948, \u091a\u0932\u0947\u0917\u093e, \u0915\u0930 \u0926\u0942\u0902\u0917\u093e\u0964
+12:14:22 [INFO] aditi — [USER] \u0920\u0940\u0915 \u0939\u0948, \u091a\u0932\u0947\u0917\u093e, \u0915\u0930 \u0926\u0942\u0902\u0917\u093e\u0964
+12:14:22 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:14:23 [INFO] aditi — [STT] speech detected
+12:14:25 [INFO] aditi — [BOT-TTS] done in 2903 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:14:25 [INFO] aditi — [BOT] Thank you KJ  \u091c\u0940\u0964 Payment \u0915\u0947 \u0932\u093f\u090f SMS \u092e\u0947\u0902 \u092d\u0947\u091c\u0947 \u0917\u090f link \u0915\u093e use \u0915\u0940\u091c\u093f\u090f\u0964 Please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 payment \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f \u0906\u092a\u0915\u093e credit score safe \u0930\u0939\u0947\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:14:35 [INFO] aditi — [BOT-TTS] done in 9789 ms | Thank you KJ  \u091c\u0940\u0964 Payment \u0915\u0947 \u0932\u093f\u090f SMS \u092e\u0947\u0902 \u092d\u0947\u091c\u0947 \u0917\u090f link \u0915\u093e use
+12:14:35 [INFO] aditi — [CALL] LLM loop ended (phase=payment_confirm, turns=2)
+12:14:35 [INFO] aditi — [CALL] hangup — reason=payment_today_confirmed
+12:14:35 [INFO] aditi — [STT] transcribing — 2160 ms utterance
+12:14:35 [INFO] aditi — [CALL] media stream handler closed
+12:14:36 [INFO] aditi — CALL_VARS {'summary': 'Customer KJ confirmed they will pay the full overdue EMI today using the payment link.'}
+12:14:36 [INFO] aditi — Call summary persisted (call=0bb5e0f8-b4dc-4abe-9155-c507ac0b3246)
+12:14:38 [INFO] aditi — Plivo call 0bb5e0f8-b4dc-4abe-9155-c507ac0b3246 terminated
+12:14:39 [INFO] aditi — [HANGUP] 0bb5e0f8-b4dc-4abe-9155-c507ac0b3246 — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=50s source='API Request'
+12:14:39 [INFO] aditi — [HANGUP] transcript already exists (20260613_121348_675262_0bb5e0f8-b4dc-4abe-9155-c507ac0b3246.jsonl) — connected call, skipping synth
+INFO:     3.7.4.233:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:17:44 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:17:44 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:17:45 [INFO] aditi — Plivo call request_uuid: f314a676-ddc6-4dbe-8057-943a1f6e710f
+12:17:45 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=f314a676-ddc6-4dbe-8057-943a1f6e710f
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:17:55 [INFO] aditi — pending_ctx rekeyed: f314a676-ddc6-4dbe-8057-943a1f6e710f \u2192 f314a676-ddc6-4dbe-8057-943a1f6e710f
+12:17:55 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.220.174', 0) - "WebSocket /media-stream" [accepted]
+12:17:56 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:17:56 [INFO] aditi — [PLIVO] call connected — Stream=13b6a6b4-d79e-489b-9d7a-379d20ad2c62 Call=f314a676-ddc6-4dbe-8057-943a1f6e710f
+12:17:56 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:17:56 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "4a05baed-cc5b-4493-a73a-eb677fc9b09a",
+  "message": "async api spawned"
+}
+
+12:17:56 [INFO] aditi — [PLIVO] recording started — call=f314a676-ddc6-4dbe-8057-943a1f6e710f recording_id=
+12:18:03 [INFO] aditi — [BOT-TTS] done in 7612 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:18:04 [INFO] aditi — [STT] streaming websocket connected
+12:18:04 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:18:05 [INFO] aditi — [STT] speech detected
+12:18:11 [INFO] aditi — [STT] transcribing — 6420 ms utterance
+12:18:12 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0902\u0928\u0947 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u0905\u092d\u0940 \u092a\u0942\u0930\u0947 \u092a\u0948\u0938\u0947 \u0928\u0939\u0940\u0902 \u0939\u0948\u0902, \u0924\u094b \u092e\u0948\u0902 \u092b\u093f\u0932\u0939\u093e\u0932 \u0915\u0947 \u0932\u093f\u090f \u0906\u0927\u093e \u0939\u0940 \u092a\u0947 \u0915\u0930 \u092a\u093e\u090a\u0902\u0917\u093e\u0964
+12:18:12 [INFO] aditi — [USER] \u092e\u0948\u0902\u0928\u0947 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u0905\u092d\u0940 \u092a\u0942\u0930\u0947 \u092a\u0948\u0938\u0947 \u0928\u0939\u0940\u0902 \u0939\u0948\u0902, \u0924\u094b \u092e\u0948\u0902 \u092b\u093f\u0932\u0939\u093e\u0932 \u0915\u0947 \u0932\u093f\u090f \u0906\u0927\u093e \u0939\u0940 \u092a\u0947 \u0915\u0930 \u092a\u093e\u090a\u0902\u0917\u093e\u0964
+12:18:12 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:18:14 [INFO] aditi — [STT] speech detected
+12:18:15 [INFO] aditi — [BOT-TTS] done in 2560 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:18:15 [INFO] aditi — [BOT] \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, payment \u0915\u0947 \u0932\u093f\u090f \u0907\u0938 call \u0915\u0947 \u092c\u093e\u0926 \u092d\u0947\u091c\u0947 \u0917\u090f payment link \u0915\u093e use \u0915\u0940\u091c\u093f\u090f\u0964 \u0915\u0943\u092a\u092f\u093e EMI \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 pay \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f penalty charges \u0938\u0947 \u092c\u091a\u0947\u0902, \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:18:25 [INFO] aditi — [BOT-TTS] done in 10579 ms | \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, payment \u0915\u0947 \u0932\u093f\u090f \u0907\u0938 call \u0915\u0947 \u092c\u093e\u0926 \u092d\u0947\u091c\u0947 \u0917\u090f payment
+12:18:25 [INFO] aditi — [CALL] LLM loop ended (phase=partial, turns=1)
+12:18:25 [INFO] aditi — [CALL] hangup — reason=partial_confirmed
+12:18:25 [INFO] aditi — [STT] transcribing — 1600 ms utterance
+12:18:25 [INFO] aditi — [CALL] media stream handler closed
+12:18:27 [INFO] aditi — CALL_VARS {'summary': 'Customer agreed to pay a partial EMI amount as they do not have the full amount currently.', 'target_date': '2026-06-14'}
+12:18:27 [INFO] aditi — Call summary persisted (call=f314a676-ddc6-4dbe-8057-943a1f6e710f)
+12:18:29 [INFO] aditi — Plivo call f314a676-ddc6-4dbe-8057-943a1f6e710f terminated
+12:18:30 [INFO] aditi — [HANGUP] f314a676-ddc6-4dbe-8057-943a1f6e710f — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=34s source='API Request'
+12:18:30 [INFO] aditi — [HANGUP] transcript already exists (20260613_121756_078765_f314a676-ddc6-4dbe-8057-943a1f6e710f.jsonl) — connected call, skipping synth
+INFO:     3.7.220.174:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:21:54 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:21:54 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:21:54 [INFO] aditi — Plivo call request_uuid: 27a2f917-cdac-4500-a6c5-a4e0837bb22b
+12:21:54 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=27a2f917-cdac-4500-a6c5-a4e0837bb22b
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:22:16 [INFO] aditi — pending_ctx rekeyed: 27a2f917-cdac-4500-a6c5-a4e0837bb22b \u2192 27a2f917-cdac-4500-a6c5-a4e0837bb22b
+12:22:16 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.220.174', 0) - "WebSocket /media-stream" [accepted]
+12:22:16 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:22:16 [INFO] aditi — [PLIVO] call connected — Stream=156f2769-95ca-4f93-b098-66c74f79af92 Call=27a2f917-cdac-4500-a6c5-a4e0837bb22b
+12:22:16 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:22:16 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "c73cdf2a-a5d7-4731-8cb7-debf9fbf9ce6",
+  "message": "async api spawned"
+}
+
+12:22:16 [INFO] aditi — [PLIVO] recording started — call=27a2f917-cdac-4500-a6c5-a4e0837bb22b recording_id=
+12:22:17 [INFO] aditi — [AMD] 27a2f917-cdac-4500-a6c5-a4e0837bb22b \u2192 machine  (Machine='true' AmdStatus='-' Event='MachineDetection')
+INFO:     3.7.4.233:0 - "POST /amd-callback HTTP/1.1" 200 OK
+12:22:17 [INFO] aditi — [AMD] mid-call machine verdict — switching to voicemail
+12:22:17 [INFO] aditi — [AMD] voicemail mode — aborting greeting, waiting 6000 ms for beep
+12:22:17 [INFO] aditi — [BOT-TTS] done in 843 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:22:17 [INFO] aditi — [STT] speech detected
+12:22:23 [INFO] aditi — [AMD] beep wait done — speaking voicemail message
+12:22:23 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f \u092c\u094b\u0932 \u0930\u0939\u0940 \u0939\u0942\u0901\u0964 \u0906\u092a\u0915\u0940 45000 \u0930\u0941\u092a\u092f\u0947 \u0915\u0940 EMI pending \u0939\u0948\u0964 \u0915\u0943\u092a\u092f\u093e \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 payment \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f penalty charges \u0938\u0947 \u092c\u091a\u0947\u0902 \u0914\u0930 \u0906\u092a\u0915\u093e CIBIL score safe \u0930\u0939\u0947\u0964 \u0927\u0928\u094d\u092f\u0935\u093e\u0926\u0964
+12:22:26 [INFO] aditi — [STT] streaming websocket connected
+12:22:26 [INFO] aditi — [STT] transcribing — 8780 ms utterance
+12:22:27 [INFO] aditi — [STT] transcribed: \u0935\u0949\u0907\u0938 \u092e\u0947\u0932, \u0926 \u092a\u0930\u094d\u0938\u0928 \u092f\u0942 \u0906\u0930 \u091f\u094d\u0930\u093e\u0907\u0902\u0917 \u091f\u0942 \u0930\u0940\u091a \u0907\u091c \u0928\u0949\u091f \u0905\u0935\u0947\u0932\u0947\u092c\u0932\u0964 \u090f\u091f \u0926 \u091f\u094b\u0928, \u092a\u094d\u0932\u0940\u091c \u0930\u093f\u0915\u0949\u0930\u094d\u0921 \u092f
+12:22:27 [INFO] aditi — [USER] \u0935\u0949\u0907\u0938 \u092e\u0947\u0932, \u0926 \u092a\u0930\u094d\u0938\u0928 \u092f\u0942 \u0906\u0930 \u091f\u094d\u0930\u093e\u0907\u0902\u0917 \u091f\u0942 \u0930\u0940\u091a \u0907\u091c \u0928\u0949\u091f \u0905\u0935\u0947\u0932\u0947\u092c\u0932\u0964 \u090f\u091f \u0926 \u091f\u094b\u0928, \u092a\u094d\u0932\u0940\u091c \u0930\u093f\u0915\u0949\u0930\u094d\u0921 \u092f\u094b\u0930 \u092e\u0948\u0938\u0947\u091c\u0964 \u0935\u094d\u0939\u0947\u0928 \u092f\u0942 \u0939\u0948\u0935 \u092b\u093f\u0928\u093f\u0936 \u0930\u093f\u0915\u0949\u0930\u094d\u0921\u093f\u0902\u0917, \u092f\u0942 \u092e\u0947 \u0939\u0948\u0902\u0917 \u0905\u092a\u0964
+12:22:36 [INFO] aditi — [BOT-TTS] done in 13599 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f \u092c\u094b\u0932 \u0930\u0939\u0940 \u0939\u0942\u0901\u0964 \u0906\u092a\u0915\u0940 
+12:22:36 [INFO] aditi — [CALL] hangup — reason=voicemail_left
+12:22:36 [INFO] aditi — Call summary persisted (call=27a2f917-cdac-4500-a6c5-a4e0837bb22b)
+12:22:36 [INFO] aditi — [CALL] LLM loop ended (phase=voicemail, turns=0)
+12:22:36 [INFO] aditi — [CALL] media stream handler closed
+12:22:38 [INFO] aditi — Plivo call 27a2f917-cdac-4500-a6c5-a4e0837bb22b terminated
+12:22:39 [INFO] aditi — [HANGUP] 27a2f917-cdac-4500-a6c5-a4e0837bb22b — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=23s source='API Request'
+12:22:39 [INFO] aditi — [HANGUP] transcript already exists (20260613_122216_270572_27a2f917-cdac-4500-a6c5-a4e0837bb22b.jsonl) — connected call, skipping synth
+INFO:     3.7.220.174:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:26:20 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:26:20 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:26:21 [INFO] aditi — Plivo call request_uuid: 8f8a23d5-dd1f-4461-92fb-44173c7437cf
+12:26:21 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=8f8a23d5-dd1f-4461-92fb-44173c7437cf
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:26:39 [INFO] aditi — pending_ctx rekeyed: 8f8a23d5-dd1f-4461-92fb-44173c7437cf \u2192 8f8a23d5-dd1f-4461-92fb-44173c7437cf
+12:26:39 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:26:39 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:26:39 [INFO] aditi — [PLIVO] call connected — Stream=398c2266-4c43-4a2d-9087-523ae73defed Call=8f8a23d5-dd1f-4461-92fb-44173c7437cf
+12:26:39 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:26:39 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "70d91dbd-e133-4fcd-ab29-f5323d32fc4d",
+  "message": "async api spawned"
+}
+
+12:26:39 [INFO] aditi — [PLIVO] recording started — call=8f8a23d5-dd1f-4461-92fb-44173c7437cf recording_id=
+12:26:47 [INFO] aditi — [BOT-TTS] done in 7303 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:26:47 [INFO] aditi — [STT] streaming websocket connected
+12:26:47 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:26:48 [INFO] aditi — [STT] speech detected
+12:26:53 [INFO] aditi — [STT] transcribing — 5520 ms utterance
+12:26:54 [INFO] aditi — [STT] transcribed: \u0928\u0939\u0940\u0902, \u092e\u0947\u0930\u0947 \u0915\u094b \u092a\u0947 \u0928\u0939\u0940\u0902 \u0915\u0930\u0928\u093e, \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0935\u0948\u0938\u0947 \u0915\u0941\u091b \u0928\u0939\u0940\u0902 \u0939\u0948 \u0905\u092d\u0940 \u0915\u0947 \u0932\u093f\u090f\u0964
+12:26:54 [INFO] aditi — [USER] \u0928\u0939\u0940\u0902, \u092e\u0947\u0930\u0947 \u0915\u094b \u092a\u0947 \u0928\u0939\u0940\u0902 \u0915\u0930\u0928\u093e, \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0935\u0948\u0938\u0947 \u0915\u0941\u091b \u0928\u0939\u0940\u0902 \u0939\u0948 \u0905\u092d\u0940 \u0915\u0947 \u0932\u093f\u090f\u0964
+12:26:54 [INFO] aditi — [STT] transcribed: \u0915\u0902\u0924\u093e\u0932 \u0939\u094b \u0917\u092f\u093e\u0964
+12:26:54 [INFO] aditi — [USER] \u0915\u0902\u0924\u093e\u0932 \u0939\u094b \u0917\u092f\u093e\u0964
+12:26:55 [INFO] aditi — [USER MERGED] 2 fragments \u2192 \u0928\u0939\u0940\u0902, \u092e\u0947\u0930\u0947 \u0915\u094b \u092a\u0947 \u0928\u0939\u0940\u0902 \u0915\u0930\u0928\u093e, \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0935\u0948\u0938\u0947 \u0915\u0941\u091b \u0928\u0939\u0940\u0902 \u0939\u0948 \u0905\u092d\u0940 \u0915\u0947 \u0932\u093f\u090f\u0964 \u0915\u0902\u0924\u093e\u0932 \u0939\u094b \u0917\u092f\u093e\u0964
+12:26:55 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:26:55 [INFO] aditi — [STT] speech detected
+12:26:56 [INFO] aditi — [STT] transcribing — 1600 ms utterance
+12:26:57 [INFO] aditi — [BOT-TTS] done in 2639 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:26:57 [INFO] aditi — [BOT] \u092c\u0924\u093e\u0907\u090f, EMI payment \u0915\u094d\u092f\u094b\u0902 \u0928\u0939\u0940\u0902 \u0939\u094b \u092a\u093e \u0930\u0939\u0940? \u0927\u094d\u092f\u093e\u0928 \u0926\u0940\u091c\u093f\u090f — pending EMI \u0938\u0947 \u0906\u092a\u0915\u093e credit score \u0916\u0930\u093e\u092c \u0939\u094b \u0938\u0915\u0924\u093e \u0939\u0948\u0964
+12:27:01 [INFO] aditi — [STT] transcribing — 600 ms utterance
+12:27:01 [INFO] aditi — [STT] speech detected
+12:27:03 [INFO] aditi — [STT] transcribing — 2080 ms utterance
+12:27:03 [INFO] aditi — [STT] speech detected
+12:27:03 [INFO] aditi — [STT] transcribed: \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0928\u0939\u0940\u0902 \u0939\u0948\u0902\u0964
+12:27:04 [INFO] aditi — [USER] \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0928\u0939\u0940\u0902 \u0939\u0948\u0902\u0964
+12:27:04 [INFO] aditi — [STT] transcribing — 720 ms utterance
+12:27:05 [INFO] aditi — [BOT-TTS] done in 7711 ms | \u092c\u0924\u093e\u0907\u090f, EMI payment \u0915\u094d\u092f\u094b\u0902 \u0928\u0939\u0940\u0902 \u0939\u094b \u092a\u093e \u0930\u0939\u0940? \u0927\u094d\u092f\u093e\u0928 \u0926\u0940\u091c\u093f\u090f — pendi
+12:27:06 [INFO] aditi — [STT] speech detected
+12:27:10 [INFO] aditi — [STT] transcribing — 3440 ms utterance
+12:27:10 [INFO] aditi — [STT] transcribed: \u092e\u0948\u0921\u092e \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948, \u090f\u0915 \u0930\u0941\u092a\u090f \u092d\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938\u0964
+12:27:10 [INFO] aditi — [USER] \u092e\u0948\u0921\u092e \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948, \u090f\u0915 \u0930\u0941\u092a\u090f \u092d\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938\u0964
+12:27:11 [INFO] aditi — [USER MERGED] 2 fragments \u2192 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0928\u0939\u0940\u0902 \u0939\u0948\u0902\u0964 \u092e\u0948\u0921\u092e \u092e\u0947\u0930\u0947 \u092a\u093e\u0938 \u092a\u0948\u0938\u0947 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948, \u090f\u0915 \u0930\u0941\u092a\u090f \u092d\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948 \u092e\u0947\u0930\u0947 \u092a\u093e\u0938\u0964
+12:27:11 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:27:11 [INFO] aditi — [STT] speech detected
+12:27:13 [INFO] aditi — [BOT-TTS] done in 2481 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:27:13 [INFO] aditi — [BOT] \u0938\u092e\u091d \u0930\u0939\u0940 \u0939\u0942\u0901 KJ  \u091c\u0940\u0964 \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 EMI pay \u0915\u0930\u0928\u0947 \u0915\u0940 \u0915\u094b\u0936\u093f\u0936 \u0915\u0940\u091c\u093f\u090f, \u0935\u0930\u0928\u093e pending EMI \u0938\u0947 \u0906\u092a\u0915\u093e CIBIL score \u0916\u0930\u093e\u092c \u0939\u094b \u0938\u0915\u0924\u093e \u0939\u0948\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:27:22 [INFO] aditi — [BOT-TTS] done in 8923 ms | \u0938\u092e\u091d \u0930\u0939\u0940 \u0939\u0942\u0901 KJ  \u091c\u0940\u0964 \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 EMI pay \u0915\u0930\u0928\u0947 \u0915\u0940 \u0915\u094b\u0936\u093f\u0936 \u0915\u0940\u091c\u093f\u090f
+12:27:22 [INFO] aditi — [CALL] LLM loop ended (phase=cannot_pay, turns=2)
+12:27:22 [INFO] aditi — [CALL] hangup — reason=cannot_pay_acknowledged
+12:27:22 [INFO] aditi — [STT] transcribing — 2100 ms utterance
+12:27:22 [INFO] aditi — [CALL] media stream handler closed
+12:27:24 [INFO] aditi — CALL_VARS {'summary': 'Customer stated they cannot pay the overdue EMI due to lack of money.', 'cannot_pay_reason': 'customer has no money available to pay EMI'}
+12:27:24 [INFO] aditi — Call summary persisted (call=8f8a23d5-dd1f-4461-92fb-44173c7437cf)
+12:27:25 [INFO] aditi — Plivo call 8f8a23d5-dd1f-4461-92fb-44173c7437cf terminated
+12:27:27 [INFO] aditi — [HANGUP] 8f8a23d5-dd1f-4461-92fb-44173c7437cf — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=47s source='API Request'
+12:27:27 [INFO] aditi — [HANGUP] transcript already exists (20260613_122639_750923_8f8a23d5-dd1f-4461-92fb-44173c7437cf.jsonl) — connected call, skipping synth
+INFO:     3.7.220.174:0 - "POST /call-hangup HTTP/1.1" 200 OK
+12:27:33 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:27:33 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:27:33 [INFO] aditi — Plivo call request_uuid: 6c1ba5dd-8a3b-4198-aeec-14da4f3918db
+12:27:33 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=6c1ba5dd-8a3b-4198-aeec-14da4f3918db
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+INFO:     connection closed
+12:27:36 [INFO] aditi — pending_ctx rekeyed: 6c1ba5dd-8a3b-4198-aeec-14da4f3918db \u2192 6c1ba5dd-8a3b-4198-aeec-14da4f3918db
+12:27:36 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:27:36 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:27:36 [INFO] aditi — [PLIVO] call connected — Stream=1a6e2054-f552-4481-aaf0-dc161a0a1088 Call=6c1ba5dd-8a3b-4198-aeec-14da4f3918db
+12:27:36 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:27:36 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "61963a19-c0be-4f50-8355-88f135cb8bb9",
+  "message": "async api spawned"
+}
+
+12:27:36 [INFO] aditi — [PLIVO] recording started — call=6c1ba5dd-8a3b-4198-aeec-14da4f3918db recording_id=
+12:27:44 [INFO] aditi — [BOT-TTS] done in 7656 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:27:45 [INFO] aditi — [STT] streaming websocket connected
+12:27:45 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:27:45 [INFO] aditi — [STT] speech detected
+12:27:50 [INFO] aditi — [STT] transcribing — 4940 ms utterance
+12:27:50 [INFO] aditi — [STT] speech detected
+12:27:51 [INFO] aditi — [STT] transcribing — 1420 ms utterance
+12:27:51 [INFO] aditi — [STT] transcribed: \u091c\u0940, \u092e\u0948\u0902 \u0905\u092d\u0940 \u0924\u094b \u0928\u0939\u0940\u0902 \u0915\u0930\u0942\u0902\u0917\u093e, \u092e\u0948\u0902 \u0938\u0940\u0927\u093e \u0905\u0917\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0915\u0930 \u0926\u0942\u0902\u0917\u093e \u092a\u0947\u092e\u0947\u0902\u091f\u0964
+12:27:51 [INFO] aditi — [USER] \u091c\u0940, \u092e\u0948\u0902 \u0905\u092d\u0940 \u0924\u094b \u0928\u0939\u0940\u0902 \u0915\u0930\u0942\u0902\u0917\u093e, \u092e\u0948\u0902 \u0938\u0940\u0927\u093e \u0905\u0917\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0915\u0930 \u0926\u0942\u0902\u0917\u093e \u092a\u0947\u092e\u0947\u0902\u091f\u0964
+12:27:52 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:27:52 [INFO] aditi — [STT] transcribed: \u0905\u0917\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0939\u094b \u091c\u093e\u090f\u0917\u093e\u0964
+12:27:52 [INFO] aditi — [USER] \u0905\u0917\u0932\u0947 \u092e\u0939\u0940\u0928\u0947 \u0939\u094b \u091c\u093e\u090f\u0917\u093e\u0964
+12:27:52 [INFO] aditi — [STT] transcribing — 560 ms utterance
+12:27:53 [INFO] aditi — [STT] speech detected
+12:27:54 [INFO] aditi — [STT] transcribing — 1480 ms utterance
+12:27:54 [INFO] aditi — [BOT-TTS] done in 2657 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:27:54 [INFO] aditi — [BOT] \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, \u092e\u0948\u0902\u0928\u0947 note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948\u0964 please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 \u0905\u092a\u0928\u0940 overdue EMI pay \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f penalty charges \u0938\u0947 \u092c\u091a\u0947\u0902 \u0914\u0930 \u0906\u092a\u0915\u093e CIBIL score safe \u0930\u0939\u0947\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:28:06 [INFO] aditi — [BOT-TTS] done in 11474 ms | \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, \u092e\u0948\u0902\u0928\u0947 note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948\u0964 please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 \u0905\u092a
+12:28:06 [INFO] aditi — [CALL] LLM loop ended (phase=ptp, turns=1)
+12:28:06 [INFO] aditi — [CALL] hangup — reason=ptp_confirmed
+12:28:06 [INFO] aditi — [CALL] media stream handler closed
+12:28:07 [INFO] aditi — CALL_VARS {'summary': 'Customer promised to pay full overdue EMI next month.', 'target_date': '2026-07-13'}
+12:28:07 [INFO] aditi — Call summary persisted (call=6c1ba5dd-8a3b-4198-aeec-14da4f3918db)
+INFO:     127.0.0.1:55449 - "GET /transcripts HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55449 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+12:28:10 [INFO] aditi — Plivo call 6c1ba5dd-8a3b-4198-aeec-14da4f3918db terminated
+12:28:12 [INFO] aditi — [HANGUP] 6c1ba5dd-8a3b-4198-aeec-14da4f3918db — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=35s source='API Request'
+12:28:12 [INFO] aditi — [HANGUP] transcript already exists (20260613_122736_609380_6c1ba5dd-8a3b-4198-aeec-14da4f3918db.jsonl) — connected call, skipping synth
+INFO:     3.7.4.233:0 - "POST /call-hangup HTTP/1.1" 200 OK
+12:28:20 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:28:20 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:28:21 [INFO] aditi — Plivo call request_uuid: 5cb05afb-f297-4eef-8e92-ce9e81cdebb9
+12:28:21 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=5cb05afb-f297-4eef-8e92-ce9e81cdebb9
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:28:24 [INFO] aditi — pending_ctx rekeyed: 5cb05afb-f297-4eef-8e92-ce9e81cdebb9 \u2192 5cb05afb-f297-4eef-8e92-ce9e81cdebb9
+12:28:24 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:28:24 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:28:24 [INFO] aditi — [PLIVO] call connected — Stream=1cad4226-229f-4579-af10-c0ce1794ff1c Call=5cb05afb-f297-4eef-8e92-ce9e81cdebb9
+12:28:24 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:28:24 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "6fed70e7-06eb-4c30-94cc-922915acb277",
+  "message": "async api spawned"
+}
+
+12:28:24 [INFO] aditi — [PLIVO] recording started — call=5cb05afb-f297-4eef-8e92-ce9e81cdebb9 recording_id=
+12:28:32 [INFO] aditi — [BOT-TTS] done in 8090 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:28:33 [INFO] aditi — [STT] streaming websocket connected
+12:28:33 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:28:33 [INFO] aditi — [STT] speech detected
+12:28:35 [INFO] aditi — [STT] transcribing — 2580 ms utterance
+INFO:     connection closed
+12:28:36 [INFO] aditi — [STT] transcribed: 27 \u0924\u093e\u0930\u0940\u0916\u093c \u0924\u0915 \u0939\u094b \u091c\u093e\u090f\u0917\u093e\u0964
+12:28:36 [INFO] aditi — [USER] 27 \u0924\u093e\u0930\u0940\u0916\u093c \u0924\u0915 \u0939\u094b \u091c\u093e\u090f\u0917\u093e\u0964
+12:28:37 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:28:38 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:28:39 [INFO] aditi — [STT] speech detected
+12:28:39 [INFO] aditi — [STT] transcribing — 920 ms utterance
+12:28:40 [INFO] aditi — [BOT-TTS] done in 2747 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:28:40 [INFO] aditi — [BOT] \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, \u092e\u0948\u0902\u0928\u0947 note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948\u0964 please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 \u0905\u092a\u0928\u0940 overdue EMI pay \u0915\u0930 \u0926\u0940\u091c\u093f\u090f \u0924\u093e\u0915\u093f penalty charges \u0938\u0947 \u092c\u091a\u0947\u0902 \u0914\u0930 \u0906\u092a\u0915\u093e CIBIL score safe \u0930\u0939\u0947\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:28:50 [INFO] aditi — [BOT-TTS] done in 10573 ms | \u0920\u0940\u0915 \u0939\u0948 KJ  \u091c\u0940, \u092e\u0948\u0902\u0928\u0947 note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948\u0964 please \u091c\u0932\u094d\u0926 \u0938\u0947 \u091c\u0932\u094d\u0926 \u0905\u092a
+12:28:50 [INFO] aditi — [CALL] LLM loop ended (phase=ptp, turns=1)
+12:28:50 [INFO] aditi — [CALL] hangup — reason=ptp_confirmed
+12:28:50 [INFO] aditi — [STT] transcribing — 260 ms utterance
+12:28:50 [INFO] aditi — [CALL] media stream handler closed
+12:28:51 [INFO] aditi — CALL_VARS {'summary': 'Customer promised to pay full overdue EMI by 27th June 2026.', 'target_date': '2026-06-27'}
+12:28:51 [INFO] aditi — Call summary persisted (call=5cb05afb-f297-4eef-8e92-ce9e81cdebb9)
+12:28:53 [INFO] aditi — Plivo call 5cb05afb-f297-4eef-8e92-ce9e81cdebb9 terminated
+12:28:54 [INFO] aditi — [HANGUP] 5cb05afb-f297-4eef-8e92-ce9e81cdebb9 — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=30s source='API Request'
+12:28:54 [INFO] aditi — [HANGUP] transcript already exists (20260613_122824_283875_5cb05afb-f297-4eef-8e92-ce9e81cdebb9.jsonl) — connected call, skipping synth
+INFO:     3.7.220.174:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed
+12:29:09 [INFO] aditi — [HANGUP] callback enabled — https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/call-hangup
+12:29:09 [INFO] aditi — [AMD] enabled (async_amd) — detection_time=2000 ms callback=https://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/amd-callback
+12:29:09 [INFO] aditi — Plivo call request_uuid: 79b54b64-3fa2-4b28-aba4-87137d26502c
+12:29:09 [INFO] aditi — [PLIVO] dialed +917977365303 — request_uuid=79b54b64-3fa2-4b28-aba4-87137d26502c
+INFO:     2405:201:31:603f:7dd2:1212:b896:3d94:0 - "POST /make-call HTTP/1.1" 200 OK
+12:29:14 [INFO] aditi — pending_ctx rekeyed: 79b54b64-3fa2-4b28-aba4-87137d26502c \u2192 79b54b64-3fa2-4b28-aba4-87137d26502c
+12:29:14 [INFO] aditi — connect_response ws_url=wss://af78-2405-201-31-603f-7dd2-1212-b896-3d94.ngrok-free.app/media-stream
+INFO:     3.7.220.174:0 - "POST /outgoing-call HTTP/1.1" 200 OK
+INFO:     ('3.7.4.233', 0) - "WebSocket /media-stream" [accepted]
+12:29:14 [INFO] aditi — [PLIVO] media stream connected (call answered)
+INFO:     connection open
+12:29:14 [INFO] aditi — [PLIVO] call connected — Stream=461626a8-3875-4546-aba8-fc375582d649 Call=79b54b64-3fa2-4b28-aba4-87137d26502c
+12:29:14 [INFO] aditi — [BOT] \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 pending \u0939\u0948 — \u0915\u092c \u0924\u0915 pay \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:29:14 [INFO] aditi — Plivo start_recording \u2192 HTTP 200  body={
+  "api_id": "47ac3798-52ca-4f26-a192-042b6f3dbbee",
+  "message": "async api spawned"
+}
+
+12:29:14 [INFO] aditi — [PLIVO] recording started — call=79b54b64-3fa2-4b28-aba4-87137d26502c recording_id=
+12:29:22 [INFO] aditi — [BOT-TTS] done in 8113 ms | \u0928\u092e\u0938\u094d\u0924\u0947 KJ  \u091c\u0940, Easy Home Finance \u0938\u0947 \u0905\u0926\u093f\u0924\u093f\u0964 \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941
+12:29:23 [INFO] aditi — [STT] streaming websocket connected
+12:29:23 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:29:23 [INFO] aditi — [STT] speech detected
+12:29:26 [INFO] aditi — [STT] transcribing — 2780 ms utterance
+12:29:26 [INFO] aditi — [STT] transcribed: \u0915\u093f\u0924\u0928\u0940 \u0915\u093f\u0924\u0928\u0940 \u0939\u0948 EMI \u092e\u0947\u0930\u0940?
+12:29:26 [INFO] aditi — [USER] \u0915\u093f\u0924\u0928\u0940 \u0915\u093f\u0924\u0928\u0940 \u0939\u0948 EMI \u092e\u0947\u0930\u0940?
+12:29:27 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:29:27 [INFO] aditi — [STT] transcribing — 560 ms utterance
+12:29:28 [INFO] aditi — [STT] speech detected
+12:29:29 [INFO] aditi — [BOT-TTS] done in 2437 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:29:29 [INFO] aditi — [BOT] \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 \u0939\u0948\u0964 \u0924\u094b \u092c\u0924\u093e\u0907\u090f, \u0915\u092c \u0924\u0915 payment \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:29:30 [INFO] aditi — [STT] transcribing — 1820 ms utterance
+12:29:34 [INFO] aditi — [STT] transcribing — 620 ms utterance
+12:29:34 [INFO] aditi — [BOT-TTS] done in 5075 ms | \u0906\u092a\u0915\u0940 EMI 45000 \u0930\u0941\u092a\u092f\u0947 \u0939\u0948\u0964 \u0924\u094b \u092c\u0924\u093e\u0907\u090f, \u0915\u092c \u0924\u0915 payment \u0915\u0930 \u092a\u093e\u090f\u0902\u0917\u0947?
+12:29:35 [INFO] aditi — [STT] speech detected
+12:29:40 [INFO] aditi — [STT] transcribing — 5140 ms utterance
+12:29:42 [INFO] aditi — [STT] transcribed: \u092a\u0930 \u092e\u0948\u0902\u0928\u0947 \u0924\u094b \u0915\u094b\u0908 \u0932\u094b\u0928 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0932\u093f\u092f\u093e, \u092e\u0947\u0930\u093e \u0915\u094b\u0908 \u0932\u094b\u0928 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948 \u092e\u0948\u0921\u092e\u0964
+12:29:42 [INFO] aditi — [USER] \u092a\u0930 \u092e\u0948\u0902\u0928\u0947 \u0924\u094b \u0915\u094b\u0908 \u0932\u094b\u0928 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0932\u093f\u092f\u093e, \u092e\u0947\u0930\u093e \u0915\u094b\u0908 \u0932\u094b\u0928 \u0939\u0940 \u0928\u0939\u0940\u0902 \u0939\u0948 \u092e\u0948\u0921\u092e\u0964
+12:29:43 [INFO] aditi — [BOT] note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:29:44 [INFO] aditi — [STT] speech detected
+12:29:45 [INFO] aditi — [BOT-TTS] done in 2273 ms | note \u0915\u0930 \u0932\u093f\u092f\u093e \u0939\u0948, \u090f\u0915 minute \u0926\u0940\u091c\u093f\u090f\u0917\u093e\u0964
+12:29:45 [INFO] aditi — [BOT] \u092f\u0939 number \u0939\u092e\u093e\u0930\u0947 organization Easy Home Finance \u092e\u0947\u0902 \u090f\u0915 loan \u0915\u0947 \u0938\u093e\u0925 registered \u0939\u0948\u0964 \u0905\u0927\u093f\u0915 \u091c\u093e\u0928\u0915\u093e\u0930\u0940 \u0915\u0947 \u0932\u093f\u090f \u0915\u0943\u092a\u092f\u093e \u0939\u092e\u093e\u0930\u0947 customer care \u0938\u0947 contact \u0915\u0940\u091c\u093f\u090f\u0964 \u0906\u092a\u0915\u093e \u0926\u093f\u0928 \u0936\u0941\u092d \u0939\u094b\u0964
+12:29:56 [INFO] aditi — [BOT-TTS] done in 10934 ms | \u092f\u0939 number \u0939\u092e\u093e\u0930\u0947 organization Easy Home Finance \u092e\u0947\u0902 \u090f\u0915 loan \u0915
+12:29:56 [INFO] aditi — [CALL] LLM loop ended (phase=disputed_loan, turns=2)
+12:29:56 [INFO] aditi — [CALL] hangup — reason=disputed_loan
+12:29:56 [INFO] aditi — [STT] transcribing — 2880 ms utterance
+12:29:56 [INFO] aditi — [CALL] media stream handler closed
+12:29:57 [INFO] aditi — CALL_VARS {'summary': 'Customer disputed the loan, claiming they never took any loan with the company.'}
+12:29:57 [INFO] aditi — Call summary persisted (call=79b54b64-3fa2-4b28-aba4-87137d26502c)
+12:29:59 [INFO] aditi — Plivo call 79b54b64-3fa2-4b28-aba4-87137d26502c terminated
+12:30:00 [INFO] aditi — [HANGUP] 79b54b64-3fa2-4b28-aba4-87137d26502c — CallStatus='completed' HangupCause='NORMAL_CLEARING' duration=46s source='API Request'
+12:30:00 [INFO] aditi — [HANGUP] transcript already exists (20260613_122914_466504_79b54b64-3fa2-4b28-aba4-87137d26502c.jsonl) — connected call, skipping synth
+INFO:     3.7.4.233:0 - "POST /call-hangup HTTP/1.1" 200 OK
+INFO:     connection closed

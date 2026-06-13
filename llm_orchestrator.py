@@ -136,7 +136,7 @@ _FLOW_SPEC = """\
 
 1) OPENING — call का पहला turn (scripted greeting के बाद)
    Re-opening (confusion में):
-     "नमस्ते [NAME] जी, मैं अदिति बोल रही हूँ Easy Home Finance से।
+     "नमस्ते [NAME] जी, Easy Home Finance से अदिति बोल रही हूँ।
       आपकी home loan EMI [emi_amount] रुपये pending है।
       आप कब तक payment कर पाएंगे?"
    Opening line में "बताइए" शब्द कभी नहीं। Due date opening में कभी नहीं —

@@ -13,6 +13,7 @@ import audioop
 import concurrent.futures
 import json
 import logging
+import random
 import time
 from pathlib import Path
 from datetime import datetime, timezone
@@ -43,6 +44,14 @@ from tts import tts_speak
 log = logging.getLogger("aditi")
 
 _VAD_HANGOVER_FRAMES = max(1, VAD_HANGOVER_MS // 20)
+
+# Short "thinking" fillers — played after each customer reply to cover
+# LLM + TTS latency so the customer hears acknowledgement instead of dead air.
+_THINKING_FILLERS: tuple[str, ...] = (
+    "uhhh, ek second dijiyega",
+    "note kar liya, ek second dijiyega",
+    "hmmm, ek second dena",
+)
 
 # Keys the LLM must never write into session context.
 _FORBIDDEN_CTX_KEYS: frozenset[str] = frozenset({
@@ -340,39 +349,21 @@ async def media_stream(ws: WebSocket) -> None:
 
         async def on_speech_start() -> None:
             """
-            Barge-in: when sustained customer speech is detected mid-TTS,
-            abort the current bot line immediately so the bot doesn't keep
-            saying "हैलो आप वहाँ हैं?" over a speaking customer.
+            Barge-in is DISABLED.
 
-            Suppressed during:
-              • opening greeting (let it finish — sets the conversation up)
-              • terminal closing lines (call is ending, no point interrupting)
-              • the brief post-TTS guard window (avoid bot-voice leak triggering it)
+            We still record that the customer is producing audio so the
+            silence timer in the LLM loop pauses while they speak (this is
+            what stops the silence prompt firing over a speaking customer),
+            but we NEVER abort the bot's in-flight TTS. The bot always
+            finishes its current line; whatever the customer says meanwhile
+            is transcribed and processed on the next turn.
             """
             log.info("[STT] speech detected")
             # Mark that the customer is actively producing input. The silence
-            # timer in the LLM loop checks this flag and pauses while it's set,
-            # so we never fire "हैलो आप वहाँ हैं?" over a speaking customer.
+            # timer in the LLM loop checks this flag and pauses while it's set.
             sess.last_speech_started_at = time.monotonic()
-            if not sess.speaking:
-                return
-            if not _barge_in_allowed():
-                return
-            # Post-TTS guard: ignore for BARGE_IN_GUARD_SEC after each new TTS
-            # start, to avoid the tail of bot's own audio bleeding into mic.
-            if sess.tts_started_at and (time.monotonic() - sess.tts_started_at) < BARGE_IN_GUARD_SEC:
-                return
-            log.info("[BARGE-IN] customer started speaking — aborting bot TTS")
-            sess.barge_in_active = True
-            abort[0] = True
-            # Tell Plivo to flush any buffered bot audio so the customer
-            # hears the cut immediately, not after the buffer drains.
-            clr = _carrier.clear_msg(sess.stream_sid)
-            if clr is not None:
-                try:
-                    await ws.send_text(json.dumps(clr))
-                except Exception as exc:
-                    log.debug("clearAudio send failed: %s", exc)
+            # No barge-in: do not abort TTS, do not flush Plivo audio.
+            return
 
         # ── Voicemail-by-STT fallback ──────────────────────────────────────
         # When Plivo AMD misses (no callback, slow callback, or unsupported on
@@ -629,6 +620,7 @@ async def media_stream(ws: WebSocket) -> None:
             async def _stream_apply_turn(
                 llm_input: str,
                 user_msg_for_history: str | None,
+                preroll: str | None = None,
             ) -> bool:
                 say_ready  = asyncio.Event()
                 say_holder = [""]
@@ -645,7 +637,21 @@ async def media_stream(ws: WebSocket) -> None:
                     turn_holder[0] = result
                     say_ready.set()
 
+                # Kick off LLM generation FIRST so it runs concurrently with
+                # the preroll filler below — the filler buys time while the
+                # LLM (and its STT round-trip) complete, hiding the latency.
                 llm_task = asyncio.create_task(_llm_bg())
+
+                # Static "thinking" filler — played once VAD has segmented the
+                # customer's utterance (i.e. they stopped talking) and we're
+                # about to answer. It plays to completion while _llm_bg streams
+                # in the background. Not added to llm_history. Skipped if the
+                # LLM already produced its say before the filler started.
+                if preroll and not sess.done and not sess._hangup_started and not say_ready.is_set():
+                    log.info("[BOT] %s", preroll)
+                    record("bot", text=preroll)
+                    await play_tts(preroll)
+
                 await say_ready.wait()
                 say_text = say_holder[0].strip()
 
@@ -827,7 +833,16 @@ async def media_stream(ws: WebSocket) -> None:
                     log.info("[USER MERGED] %d fragments → %s", len(fragments), utterance)
                 record("user", text=utterance)
                 _turn_count += 1
-                if await _stream_apply_turn(utterance, utterance):
+                # Pass a short "thinking" filler as preroll: it plays the
+                # moment VAD has confirmed end-of-speech and the transcript is
+                # in, WHILE the LLM generates concurrently — so the customer
+                # hears an acknowledgement instead of dead air during LLM/TTS
+                # latency. Silence-prompt turns below pass no preroll.
+                if await _stream_apply_turn(
+                    utterance,
+                    utterance,
+                    preroll=random.choice(_THINKING_FILLERS),
+                ):
                     break
 
             log.info("[CALL] LLM loop ended (phase=%s, turns=%d)", sess.state, _turn_count)
