@@ -48,9 +48,11 @@ _VAD_HANGOVER_FRAMES = max(1, VAD_HANGOVER_MS // 20)
 # Short "thinking" fillers — played after each customer reply to cover
 # LLM + TTS latency so the customer hears acknowledgement instead of dead air.
 _THINKING_FILLERS: tuple[str, ...] = (
-    "uhhh, ek second dijiyega",
-    "note kar liya, ek second dijiyega",
-    "hmmm, ek second dena",
+    "hmm",
+    "okay",
+    "achha",
+    "haan",
+    "ji",
 )
 
 # Keys the LLM must never write into session context.
