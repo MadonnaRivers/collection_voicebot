@@ -200,6 +200,31 @@ def trigger_code_for_hangup(hangup_reason: str) -> str:
     return _TRIGGER_CODE_BY_HANGUP.get((hangup_reason or "").strip(), "")
 
 
+def _is_6pm_campaign_slot(ctx: dict[str, str] | None) -> bool:
+    """
+    True when campaign_slot represents the 6pm run.
+    Accepted forms are intentionally small and explicit for safety.
+    """
+    cx = dict(ctx or {})
+    slot = str(cx.get("campaign_slot") or "").strip().lower().replace(" ", "")
+    return slot in {"6pm", "18:00", "1800", "slot_6pm"}
+
+
+def trigger_code_for_hangup_with_ctx(
+    hangup_reason: str,
+    ctx: dict[str, str] | None,
+) -> str:
+    """
+    Context-aware trigger-code resolver.
+    - Payment mappings remain unchanged.
+    - BUSY mappings fire only for 6pm campaign slot calls.
+    """
+    code = trigger_code_for_hangup(hangup_reason)
+    if code != "BUSY":
+        return code
+    return code if _is_6pm_campaign_slot(ctx) else ""
+
+
 def build_trigger_envelope(
     ctx: dict[str, str] | None,
     trigger_code: str = "PAYMENT_VOICEBOT",
@@ -210,7 +235,7 @@ def build_trigger_envelope(
 
     Shape:
       {
-        "trigger_code":          "PAYMENT_VOICEBOT" | "PARTIAL_PAYMENT_VOICEBOT",
+        "trigger_code":          "PAYMENT_VOICEBOT" | "PARTIAL_PAYMENT_VOICEBOT" | "BUSY",
         "trigger_from_workflow": 0,
         "instance_id":           "",
         "primary_key":           "<loan_app_id from /make-call ctx>",

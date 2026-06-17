@@ -226,7 +226,9 @@ async def make_call(
     if not to:
         raise HTTPException(status_code=422, detail="`phone_number` is required")
 
-    # Build ctx: defaults → caller overrides (int variants derived inside build_default_ctx)
+    # Build ctx: defaults → caller overrides (int variants derived inside build_default_ctx).
+    # Optional pass-through key: campaign_slot (e.g., "6pm") used only for
+    # BUSY trigger gating; it does not affect call conversation behaviour.
     ctx = {**build_default_ctx(), **{k: str(v) for k, v in body.items()}}
     ctx["phone_number"] = to  # ensure it's always set
 
@@ -407,6 +409,7 @@ async def call_hangup(request: Request) -> JSONResponse:
         form = dict(request.query_params)
 
     call_uuid    = (form.get("CallUUID")    or "").strip()
+    request_uuid = (form.get("RequestUUID") or "").strip()
     call_status  = (form.get("CallStatus")  or "").strip()
     hangup_cause = (form.get("HangupCause") or "").strip().upper()
     hangup_src   = (form.get("HangupSource") or "").strip()
@@ -446,9 +449,12 @@ async def call_hangup(request: Request) -> JSONResponse:
             reason  = "no_pickup"
             summary = f"Call ended without connect ({hangup_cause or call_status or 'unknown'})."
 
-    # Pull customer info from pending_ctx (still there for unanswered calls,
-    # because call_handler.media_stream never ran to pop it).
+    # Pull customer info from pending_ctx.
+    # Unanswered calls may still be keyed by request_uuid (if /outgoing-call
+    # never rekeyed to call_uuid), so fall back to RequestUUID.
     ctx = pending_ctx.pop(call_uuid, {}) or {}
+    if not ctx and request_uuid:
+        ctx = pending_ctx.pop(request_uuid, {}) or {}
 
     # Write a synthetic transcript JSONL so /transcripts shows the attempt.
     try:
@@ -488,7 +494,7 @@ async def call_hangup(request: Request) -> JSONResponse:
     try:
         from call_webhook import (
             build_call_summary_push_body, push_call_summary_webhook,
-            build_trigger_envelope, push_trigger_webhook, trigger_code_for_hangup,
+            build_trigger_envelope, push_trigger_webhook, trigger_code_for_hangup_with_ctx,
         )
         from config import CALL_SUMMARY_WEBHOOK_URL, TRIGGER_WEBHOOK_URL
         wh_body = build_call_summary_push_body(
@@ -501,7 +507,7 @@ async def call_hangup(request: Request) -> JSONResponse:
         if CALL_SUMMARY_WEBHOOK_URL:
             await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
         if TRIGGER_WEBHOOK_URL:
-            trig_code = trigger_code_for_hangup(reason)
+            trig_code = trigger_code_for_hangup_with_ctx(reason, wh_body)
             if trig_code:
                 trig = build_trigger_envelope(wh_body, trigger_code=trig_code)
                 await push_trigger_webhook(TRIGGER_WEBHOOK_URL, trig)
@@ -631,7 +637,7 @@ async def recording_callback(request: Request) -> JSONResponse:
     from config import CALL_SUMMARY_WEBHOOK_URL, TRIGGER_WEBHOOK_URL
     from call_webhook import (
         push_call_summary_webhook, build_trigger_envelope, push_trigger_webhook,
-        trigger_code_for_hangup,
+        trigger_code_for_hangup_with_ctx,
     )
     if CALL_SUMMARY_WEBHOOK_URL and call_uuid:
         rec_start_ms  = data.get("recording_start_ms", "")
@@ -676,10 +682,12 @@ async def recording_callback(request: Request) -> JSONResponse:
         )
 
         # Secondary trigger envelope — fires for mapped outcomes via
-        # trigger_code_for_hangup() (e.g. payment-positive outcomes and BUSY
-        # retry outcomes like no_response).
+        # trigger_code_for_hangup_with_ctx(). BUSY-mapped outcomes are gated
+        # by campaign_slot (6pm only); payment-positive mappings are unchanged.
         if TRIGGER_WEBHOOK_URL:
-            trig_code = trigger_code_for_hangup(wh_body.get("hangup_reason", ""))
+            trig_code = trigger_code_for_hangup_with_ctx(
+                wh_body.get("hangup_reason", ""), wh_body,
+            )
             if trig_code:
                 trig = build_trigger_envelope(wh_body, trigger_code=trig_code)
                 await push_trigger_webhook(TRIGGER_WEBHOOK_URL, trig)
