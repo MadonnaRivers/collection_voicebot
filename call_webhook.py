@@ -177,11 +177,9 @@ async def push_call_summary_webhook(url: str, body: dict[str, Any]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Trigger envelope — secondary downstream-n8n notification
-# Fires ONLY for payment-positive outcomes (customer agrees to pay or commits
-# to a partial). All other outcomes (cannot_pay / already_paid / deceased /
-# disputed_loan / no_response / voicemail / no_pickup / busy / rejected) are
-# explicitly SKIPPED — the bot's primary push_data webhook still gets them.
+# Trigger envelope — secondary downstream-n8n notification.
+# Payment-positive outcomes keep their existing trigger codes.
+# Operational retry outcomes (busy/no-pickup/network/no-response) map to BUSY.
 # ─────────────────────────────────────────────────────────────────────────────
 
 # hangup_reason → trigger_code mapping. Returning "" means: don't fire.
@@ -189,6 +187,11 @@ _TRIGGER_CODE_BY_HANGUP: dict[str, str] = {
     "payment_today_confirmed": "PAYMENT_VOICEBOT",          # pays today
     "ptp_confirmed":           "PAYMENT_VOICEBOT",          # promises to pay (PTP)
     "partial_confirmed":       "PARTIAL_PAYMENT_VOICEBOT",  # partial payment commit
+    "busy":                    "BUSY",
+    "no_answer":               "BUSY",
+    "no_pickup":               "BUSY",
+    "network_failure":         "BUSY",
+    "no_response":             "BUSY",
 }
 
 

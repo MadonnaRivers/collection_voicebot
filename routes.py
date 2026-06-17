@@ -484,25 +484,34 @@ async def call_hangup(request: Request) -> JSONResponse:
     except OSError as exc:
         log.warning("[HANGUP] could not write synthetic transcript: %s", exc)
 
-    # Push the no-pickup signal to the CRM webhook so retry workflows see it.
+    # Push no-pickup signal to CRM + trigger webhook (as applicable).
     try:
         from call_webhook import (
             build_call_summary_push_body, push_call_summary_webhook,
+            build_trigger_envelope, push_trigger_webhook, trigger_code_for_hangup,
         )
-        from config import CALL_SUMMARY_WEBHOOK_URL
+        from config import CALL_SUMMARY_WEBHOOK_URL, TRIGGER_WEBHOOK_URL
+        wh_body = build_call_summary_push_body(
+            call_uuid, reason, {"summary": summary}, ctx=ctx, state="no_pickup",
+        )
+        wh_body["plivo_cause"]  = hangup_cause
+        wh_body["plivo_status"] = call_status
+        wh_body["duration_sec"] = duration_s
+
         if CALL_SUMMARY_WEBHOOK_URL:
-            wh_body = build_call_summary_push_body(
-                call_uuid, reason, {"summary": summary}, ctx=ctx, state="no_pickup",
-            )
-            wh_body["plivo_cause"]  = hangup_cause
-            wh_body["plivo_status"] = call_status
-            wh_body["duration_sec"] = duration_s
             await push_call_summary_webhook(CALL_SUMMARY_WEBHOOK_URL, wh_body)
-        # NOTE: trigger webhook is NOT fired from this no-pickup path.
-        # `reason` here is always no_answer / busy / rejected / etc — the
-        # customer never spoke, so by definition they didn't agree to pay.
+        if TRIGGER_WEBHOOK_URL:
+            trig_code = trigger_code_for_hangup(reason)
+            if trig_code:
+                trig = build_trigger_envelope(wh_body, trigger_code=trig_code)
+                await push_trigger_webhook(TRIGGER_WEBHOOK_URL, trig)
+            else:
+                log.debug(
+                    "Trigger webhook skipped in /call-hangup — reason=%r not mapped",
+                    reason,
+                )
     except Exception as exc:
-        log.warning("[HANGUP] CRM webhook push failed: %s", exc)
+        log.warning("[HANGUP] webhook push failed: %s", exc)
 
     return JSONResponse({"ok": True, "reason": reason})
 
@@ -666,10 +675,9 @@ async def recording_callback(request: Request) -> JSONResponse:
             "(fields=%d)", call_uuid, len(wh_body),
         )
 
-        # Secondary trigger envelope — fires ONLY for payment-positive
-        # outcomes (agrees to pay today / PTP / partial). Skipped silently
-        # for cannot_pay, already_paid, deceased, disputed_loan, no_response,
-        # voicemail and all carrier-side hangups.
+        # Secondary trigger envelope — fires for mapped outcomes via
+        # trigger_code_for_hangup() (e.g. payment-positive outcomes and BUSY
+        # retry outcomes like no_response).
         if TRIGGER_WEBHOOK_URL:
             trig_code = trigger_code_for_hangup(wh_body.get("hangup_reason", ""))
             if trig_code:

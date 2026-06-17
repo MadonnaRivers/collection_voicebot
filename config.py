@@ -84,12 +84,13 @@ RECORDING_CALLBACK_URL = os.getenv(
 ).strip()
 
 # ── Trigger-envelope webhook ──────────────────────────────────────────────────
-# Fires ONLY for payment-positive outcomes:
+# Fires for mapped outcomes:
 #   payment_today_confirmed → trigger_code = "PAYMENT_VOICEBOT"
 #   ptp_confirmed           → trigger_code = "PAYMENT_VOICEBOT"
 #   partial_confirmed       → trigger_code = "PARTIAL_PAYMENT_VOICEBOT"
-# All other outcomes (cannot_pay / already_paid / deceased / disputed_loan /
-# no_response / voicemail / no_pickup / busy / rejected) are SKIPPED here.
+#   busy / no_answer / no_pickup / network_failure / no_response
+#                          → trigger_code = "BUSY"
+# Unmapped outcomes are skipped.
 # CALL_SUMMARY_WEBHOOK_URL still receives EVERY call (untouched).
 # Leave TRIGGER_WEBHOOK_URL blank to disable the trigger push entirely.
 TRIGGER_WEBHOOK_URL = os.getenv("TRIGGER_WEBHOOK_URL", "").strip()
