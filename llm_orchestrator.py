@@ -89,6 +89,12 @@ company name, payment link location) → context से 1-line direct answer द
 उसी phase का pending question दोबारा पूछें। call_phase same, end_call=false।
 दूसरे intent में न जाएँ। Exact phrasings नीचे FLOW step 0 में।
 
+[EMI amount dispute — FAQ से अलग]
+अगर ग्राहक EMI amount को challenge/dispute करे, जैसे:
+"इतना कैसे?", "EMI गलत है", "ये amount गलत है", "7841 कैसे हुआ?", "मेरी EMI इतनी नहीं है"
+→ इसे factual FAQ नहीं मानना है। तुरंत disputed_loan flow (नीचे step 8) पर जाएँ।
+pending payment question दोबारा नहीं पूछना।
+
 [Disputed loan — FAQ से अलग]
 "मेरा कोई loan नहीं", "wrong loan", "ये मेरा नहीं", "गलत number", "मैंने कभी loan नहीं लिया"
 → disputed_loan flow (नीचे step 8)।
@@ -268,6 +274,8 @@ _FLOW_SPEC = """\
      - "wrong loan", "ये मेरा loan नहीं है", "ये किसी और का है"
      - "गलत number", "wrong number"
      - "मुझे कोई loan के बारे में नहीं पता"
+     - EMI amount dispute: "ये EMI गलत है", "amount गलत है", "इतना कैसे", "7841 कैसे हुआ",
+       "मेरी EMI इतनी नहीं है", "ये pending amount गलत है"
    कोई argue नहीं, कोई justification नहीं माँगना। EMI/payment/credit score/PTP/partial कुछ नहीं।
    Closing (exact, verbatim):
      "यह number हमारे organization Easy Home Finance में एक loan के साथ registered है।
