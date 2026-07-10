@@ -256,7 +256,7 @@ async def make_call(
     ctx["_inserted_at"] = str(_now)   # timestamp for future TTL checks
     from config import (
         AMD_ENABLED, AMD_CALLBACK_URL, AMD_DETECTION_TIME_MS,
-        HANGUP_CALLBACK_URL,
+        HANGUP_CALLBACK_URL, PLIVO_CALL_TIME_LIMIT_SEC,
     )
     amd_url = AMD_CALLBACK_URL if AMD_ENABLED else ""
     call_sid = await carrier.make_call(
@@ -265,6 +265,7 @@ async def make_call(
         amd_callback_url=amd_url,
         amd_detection_time_ms=AMD_DETECTION_TIME_MS,
         hangup_url=HANGUP_CALLBACK_URL,
+        time_limit=PLIVO_CALL_TIME_LIMIT_SEC,
     )
     pending_ctx[call_sid] = ctx
 
@@ -810,12 +811,14 @@ _OUTCOME_STYLE: dict[str, tuple[str, str, str]] = {
     "cannot_pay":             ("Cannot Pay",     "#fee2e2", "#b91c1c"),
     "callback_scheduled":     ("Callback",       "#ede9fe", "#6d28d9"),
     "callback":               ("Callback",       "#ede9fe", "#6d28d9"),
+    "auto_debit_requested":   ("Auto-Debit",     "#dcfce7", "#166534"),
     "already_paid_noted":     ("Already Paid",   "#fef9c3", "#854d0e"),
     "already_paid":           ("Already Paid",   "#fef9c3", "#854d0e"),
     "deceased":               ("Deceased",       "#f1f5f9", "#475569"),
     "disputed_loan":          ("Disputed Loan",  "#ffedd5", "#9a3412"),
     "no_response":            ("No Response",    "#f1f5f9", "#64748b"),
     "silence_timeout":        ("No Response",    "#f1f5f9", "#64748b"),
+    "time_limit":             ("Time Limit",     "#fef3c7", "#92400e"),
     "orchestrator_failure":   ("Error",          "#fee2e2", "#b91c1c"),
     "carrier_disconnect":     ("Disconnected",   "#f1f5f9", "#64748b"),
     "no_answer":              ("Didn't Pick Up", "#fef9c3", "#854d0e"),

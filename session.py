@@ -32,6 +32,9 @@ class CallSession:
     stream_sid:      str   = ""
     call_sid:        str   = ""
     state:           str   = "llm"   # last LLM call_phase for logs
+    # Monotonic time when the call connected (media stream up). Basis for the
+    # wall-clock max-duration soft cap (LLM loop) and hard watchdog.
+    call_started_at: float = 0.0
     done:            bool  = False
     speaking:        bool  = False
     tts_started_at:  float = 0.0    # monotonic time when current TTS play started

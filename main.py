@@ -32,7 +32,7 @@ from routes import app
 from config import (
     NGROK_URL, PORT,
     AMD_ENABLED, AMD_CALLBACK_URL, AMD_DETECTION_TIME_MS,
-    HANGUP_CALLBACK_URL,
+    HANGUP_CALLBACK_URL, PLIVO_CALL_TIME_LIMIT_SEC,
 )
 from scripts import build_default_ctx
 from session import pending_ctx
@@ -48,6 +48,7 @@ def _place_call(to: str, ctx: dict) -> str:
         amd_callback_url=amd_url,
         amd_detection_time_ms=AMD_DETECTION_TIME_MS,
         hangup_url=HANGUP_CALLBACK_URL,
+        time_limit=PLIVO_CALL_TIME_LIMIT_SEC,
     ))
     pending_ctx[call_sid] = ctx
     log.info("Call SID: %s", call_sid)

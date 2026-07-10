@@ -37,6 +37,7 @@ async def make_call(
     amd_callback_url: str = "",
     amd_detection_time_ms: int = 2000,
     hangup_url: str = "",
+    time_limit: int = 0,
 ) -> str:
     """
     Initiate an outbound call via Plivo REST API.
@@ -61,6 +62,11 @@ async def make_call(
         payload["hangup_url"]    = hangup_url
         payload["hangup_method"] = "POST"   # Plivo's actual param name (not hangup_url_method)
         log.info("[HANGUP] callback enabled — %s", hangup_url)
+    if time_limit and time_limit > 0:
+        # Carrier-side hard backstop: Plivo hangs the call up at this duration
+        # regardless of what our app is doing. Set above the app's own hard cap.
+        payload["time_limit"] = str(time_limit)
+        log.info("[PLIVO] carrier time_limit=%ds (hard duration backstop)", time_limit)
     if amd_callback_url:
         payload.update({
             "machine_detection":         "true",

@@ -30,6 +30,7 @@ from config import (
     HANGUP_GRACE_SEC, SILENCE_TIMEOUT_SEC, BARGE_IN_GUARD_SEC,
     TRANSCRIPTS_DIR, RECORDING_CALLBACK_URL,
     AMD_ENABLED, AMD_WAIT_MS, AMD_LEAVE_MESSAGE, AMD_BEEP_WAIT_MS,
+    MAX_CALL_SOFT_SEC, MAX_CALL_HARD_SEC,
 )
 from classifier import finalize_call_variables
 from call_webhook import build_call_summary_push_body
@@ -53,6 +54,19 @@ _THINKING_FILLERS: tuple[str, ...] = (
     "achha",
     "haan",
     "ji",
+)
+
+# Injected into the LLM loop when the wall-clock soft time limit is hit. The
+# prompt's [Time limit] control-signal block (llm_orchestrator) defines the exact
+# wrap-up: confirm any concrete commitment the customer already made (using that
+# flow's own closing + hangup_reason), else the callback message with
+# hangup_reason=time_limit. Either way end_call=true.
+_TIME_LIMIT_INPUT = (
+    "[TIME_LIMIT: Call duration limit reached — you MUST end the call now. "
+    "If the customer has ALREADY clearly agreed to a concrete commitment in this "
+    "call (pay today / a specific PTP date / a partial amount), give that flow's "
+    "normal closing line and its own hangup_reason. Otherwise say the time-limit "
+    "callback line and set end_call=true, hangup_reason=time_limit.]"
 )
 
 # Keys the LLM must never write into session context.
@@ -484,6 +498,9 @@ async def media_stream(ws: WebSocket) -> None:
                     if evt_type == "call_start":
                         sess.stream_sid = payload["stream_sid"]
                         sess.call_sid   = payload["call_sid"]
+                        # Anchor the wall-clock duration cap at call-connect.
+                        if not sess.call_started_at:
+                            sess.call_started_at = time.monotonic()
                         if sess.call_sid in pending_ctx:
                             sess.ctx = pending_ctx.pop(sess.call_sid)
                         log.info("[PLIVO] call connected — Stream=%s Call=%s",
@@ -763,6 +780,23 @@ async def media_stream(ws: WebSocket) -> None:
             _MAX_TURNS           = 20
 
             while not sess.done:
+                # Wall-clock soft cap — inject a graceful wrap-up turn. The LLM
+                # confirms any commitment already made (with that flow's proper
+                # hangup_reason) or delivers the callback message; either way it
+                # ends the call. The hard watchdog below is the backstop if this
+                # turn itself stalls.
+                if (MAX_CALL_SOFT_SEC > 0 and sess.call_started_at
+                        and time.monotonic() - sess.call_started_at >= MAX_CALL_SOFT_SEC):
+                    elapsed = time.monotonic() - sess.call_started_at
+                    log.warning("LLM: soft time limit (%.0fs) reached at %.0fs — wrapping up",
+                                MAX_CALL_SOFT_SEC, elapsed)
+                    ended = await _stream_apply_turn(
+                        _TIME_LIMIT_INPUT, "[समय सीमा — कॉल समाप्त]",
+                    )
+                    if not ended and not sess.done:
+                        await hangup("time_limit")
+                    break
+
                 if _turn_count >= _MAX_TURNS:
                     log.warning("LLM: max turns (%d) reached — force ending", _MAX_TURNS)
                     await _stream_apply_turn(
@@ -849,7 +883,24 @@ async def media_stream(ws: WebSocket) -> None:
 
             log.info("[CALL] LLM loop ended (phase=%s, turns=%d)", sess.state, _turn_count)
 
-        await asyncio.gather(recv_ws(), llm_conversation_loop())
+        # ── Hard duration watchdog ─────────────────────────────────────────
+        # Backstop for the loop's soft cap: if the wrap-up turn itself stalls
+        # (LLM/TTS hang) the call would otherwise run until Plivo's carrier
+        # time_limit. This force-hangs up at the app hard cap first.
+        async def _duration_watchdog() -> None:
+            if MAX_CALL_HARD_SEC <= 0:
+                return
+            while not sess.done:
+                if (sess.call_started_at
+                        and time.monotonic() - sess.call_started_at >= MAX_CALL_HARD_SEC):
+                    if not sess.done and not sess._hangup_started:
+                        log.warning("[CALL] hard time limit (%.0fs) reached — force hangup",
+                                    MAX_CALL_HARD_SEC)
+                        await hangup("time_limit")
+                    return
+                await asyncio.sleep(1.0)
+
+        await asyncio.gather(recv_ws(), llm_conversation_loop(), _duration_watchdog())
 
     finally:
         try:

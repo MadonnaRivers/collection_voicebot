@@ -132,6 +132,20 @@ AUDIO_TRANSCRIPT_WEBHOOK_URL = os.getenv(
     "https://web-n8n.easyhomefinance.in/webhook/audio_and_transcripts",
 ).strip()
 
+# ── Max call duration (wall-clock hard cap) ───────────────────────────────────
+# Layered so a long call ends gracefully with a proper outcome, never abruptly:
+#   SOFT: bot injects a wrap-up turn — confirms any commitment the customer
+#         already made, else a "we'll call back — please pay soon" message —
+#         then closes cleanly (hangup_reason=time_limit for the fallback case).
+#   HARD: watchdog force-hangs up if the soft wrap-up itself stalls (LLM/TTS hang).
+#   PLIVO_CALL_TIME_LIMIT_SEC: carrier-side backstop passed to Plivo's Call API;
+#         Plivo kills the call at this duration regardless of app state. Keep it
+#         above HARD. Set 0 to disable the carrier backstop.
+# Counted from call-connect (media stream up). Set SOFT/HARD to 0 to disable.
+MAX_CALL_SOFT_SEC         = float(os.getenv("MAX_CALL_SOFT_SEC",        "270"))  # 4:30
+MAX_CALL_HARD_SEC         = float(os.getenv("MAX_CALL_HARD_SEC",        "300"))  # 5:00
+PLIVO_CALL_TIME_LIMIT_SEC = int(os.getenv("PLIVO_CALL_TIME_LIMIT_SEC",  "330"))  # 5:30
+
 # ── Call behaviour tunables ───────────────────────────────────────────────────
 HANGUP_GRACE_SEC         = float(os.getenv("HANGUP_GRACE_SEC",         "1.5"))
 SILENCE_TIMEOUT_SEC      = float(os.getenv("SILENCE_TIMEOUT_SEC",      "6.5"))

@@ -21,6 +21,7 @@ _STATE_LABEL: dict[str, str] = {
     "already_paid":    "Already Paid",
     "deceased":        "Deceased Report",
     "callback_later":  "Callback Requested",
+    "auto_debit":      "Auto-Debit Requested",
     "no_response":     "No Response",
 }
 
@@ -73,6 +74,10 @@ _INTERNAL_CTX_KEYS: frozenset[str] = frozenset({
     "turn_count",
     "partial_offer_made",   # legacy V1 flag, no longer used
     "_inserted_at",         # /make-call TTL bookkeeping — not for n8n
+    # Auto-debit intent is already conveyed to the CRM via hangup_reason
+    # ("auto_debit_requested") + humanized state; keep the raw ctx flag out of
+    # the webhook so the payload shape stays identical to before.
+    "auto_debit_requested",
 })
 
 
@@ -147,6 +152,8 @@ def build_call_summary_push_body(
     # the day to retry / route to human agent.
     _TARGET_TODAY_HANGUPS = {
         "no_response",
+        "time_limit",
+        "auto_debit_requested",
         "disputed_loan",
         "callback_requested",
         "voicemail",
@@ -186,12 +193,14 @@ async def push_call_summary_webhook(url: str, body: dict[str, Any]) -> None:
 _TRIGGER_CODE_BY_HANGUP: dict[str, str] = {
     "payment_today_confirmed": "PAYMENT_VOICEBOT",          # pays today
     "ptp_confirmed":           "PAYMENT_VOICEBOT",          # promises to pay (PTP)
+    "auto_debit_requested":    "PAYMENT_VOICEBOT",          # wants auto-debit from account
     "partial_confirmed":       "PARTIAL_PAYMENT_VOICEBOT",  # partial payment commit
     "busy":                    "BUSY",
     "no_answer":               "BUSY",
     "no_pickup":               "BUSY",
     "network_failure":         "BUSY",
     "no_response":             "BUSY",
+    "time_limit":              "BUSY",   # ran out of time → operational retry
 }
 
 

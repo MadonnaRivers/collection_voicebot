@@ -24,40 +24,26 @@ def _ctx_for_prompt(ctx: dict[str, str]) -> dict[str, str]:
 
 
 def _backfill_from_ctx(result: dict, hangup_reason: str, ctx: dict[str, str]) -> None:
-    """Backfill ground-truth ctx values when the LLM missed them, and strip
-    fields that don't belong to the current hangup_reason (anti-hallucination)."""
-    # target_date — only meaningful for ptp / partial closures.
-    if hangup_reason in ("ptp_confirmed", "partial_confirmed"):
-        if ctx.get("target_date") and not result.get("target_date"):
-            result["target_date"] = ctx["target_date"]
-    else:
-        result.pop("target_date", None)
+    """Fill ground-truth ctx values the transcript LLM missed.
 
-    # partial_amount — only valid when the call actually ended in partial_confirmed.
-    # The bot never offers partial in this system, so any value must come from
-    # ctx (which was customer-stated). Strip otherwise.
-    if hangup_reason == "partial_confirmed":
-        if ctx.get("partial_amount") and not result.get("partial_amount"):
-            result["partial_amount"] = ctx["partial_amount"]
-    else:
-        result.pop("partial_amount", None)
-
-    # already_paid fields — only for already_paid_noted closures.
-    if hangup_reason == "already_paid_noted":
-        if ctx.get("already_paid_date") and not result.get("already_paid_date"):
-            result["already_paid_date"] = ctx["already_paid_date"]
-        if ctx.get("payment_mode") and not result.get("already_paid_mode"):
-            result["already_paid_mode"] = ctx["payment_mode"]
-    else:
-        result.pop("already_paid_date", None)
-        result.pop("already_paid_mode", None)
-
-    # cannot_pay_reason — only for cannot_pay_acknowledged closures.
-    if hangup_reason == "cannot_pay_acknowledged":
-        if ctx.get("cannot_pay_reason") and not result.get("cannot_pay_reason"):
-            result["cannot_pay_reason"] = ctx["cannot_pay_reason"]
-    else:
-        result.pop("cannot_pay_reason", None)
+    Unlike the old version this does NOT strip fields based on hangup_reason —
+    that gating was the main source of null CRM data. Extraction is now driven
+    by what the customer actually said (see the prompt's ground-truth rules);
+    here we only *add* agent-validated ctx values when the LLM left a slot
+    empty. Output keys are unchanged from before, so the webhook payload shape
+    is byte-for-byte identical to the previous version.
+    """
+    # Prefer ctx (agent already validated these mid-call) when LLM left blank.
+    if ctx.get("target_date") and not result.get("target_date"):
+        result["target_date"] = ctx["target_date"]
+    if ctx.get("partial_amount") and not result.get("partial_amount"):
+        result["partial_amount"] = ctx["partial_amount"]
+    if ctx.get("already_paid_date") and not result.get("already_paid_date"):
+        result["already_paid_date"] = ctx["already_paid_date"]
+    if ctx.get("payment_mode") and not result.get("already_paid_mode"):
+        result["already_paid_mode"] = ctx["payment_mode"]
+    if ctx.get("cannot_pay_reason") and not result.get("cannot_pay_reason"):
+        result["cannot_pay_reason"] = ctx["cannot_pay_reason"]
 
     # callback intent has been removed from the flow — never emit callback_time.
     result.pop("callback_time", None)
@@ -97,37 +83,36 @@ async def finalize_call_variables(
             f"Final merged context JSON (key facts the agent stored):\n"
             f"{json.dumps(_ctx_for_prompt(ctx), ensure_ascii=False, indent=2)}\n\n"
             f"Full dialogue transcript (Hindi/Hinglish):\n{transcript_text or '(no transcript)'}\n\n"
-            "Extract CRM-ready fields from the transcript + context. Output ONE JSON object\n"
-            "with ONLY the applicable fields below. Use exact key names. Output ONLY valid JSON.\n"
+            "Read the FULL transcript and extract every CRM field the customer actually\n"
+            "revealed — regardless of how the call ended. The system hangup_reason is only\n"
+            "a hint; base every field on what the CUSTOMER said. Output ONE JSON object with\n"
+            "exact key names below. Output ONLY valid JSON.\n"
             "\n"
             "GROUND-TRUTH RULES — read carefully:\n"
-            "  • Only emit a field if the CUSTOMER explicitly stated the value during the call.\n"
-            "    Never copy values the BOT said (offers, prompts, defaults, examples).\n"
-            "  • If a field is not customer-stated AND not in context, OMIT it entirely.\n"
-            "  • Never invent dates, amounts, modes, or reasons. No hallucination.\n"
+            "  • Base every value ONLY on what the CUSTOMER said (in ANY language — they may\n"
+            "    speak Hindi, Hinglish, or a regional language; understand all of them).\n"
+            "  • NEVER copy values the BOT said (offers, prompts, defaults, examples).\n"
+            "  • Never invent dates, amounts, modes, or reasons. If a field wasn't stated,\n"
+            "    OMIT it (except payment_intent and summary, which are always required).\n"
             "  • Prefer context values when they exist (the agent already validated them).\n"
             "\n"
-            "FIELDS:\n"
+            "FIELDS (exact key names — same set as always; do not add new keys):\n"
             "- summary (REQUIRED): one-line English outcome describing what happened.\n"
-            "- target_date: YYYY-MM-DD — the single universal follow-up date.\n"
-            "    ptp_confirmed       → date customer promised to pay in full (context.target_date)\n"
-            "    partial_confirmed   → date remainder balance is due (context.target_date)\n"
-            "    Other hangup reasons → OMIT this field.\n"
-            "- partial_amount: rupee number as string — INCLUDE ONLY IF:\n"
-            "    (a) hangup_reason == 'partial_confirmed', AND\n"
-            "    (b) context.partial_amount has a real number, AND\n"
-            "    (c) that number was spoken by the CUSTOMER (not the bot) in the transcript.\n"
-            "  The bot never offers partial amounts in this system, so any rupee figure must\n"
-            "  trace back to a customer turn. If unsure, OMIT.\n"
-            "- cannot_pay_reason: 5-15 word English summary of why customer cannot pay.\n"
-            "    Only when hangup_reason == 'cannot_pay_acknowledged'. Use 'uncooperative'\n"
-            "    when the customer was evasive/gave no real reason (matches context).\n"
+            "    If the customer asked us to auto-debit / deduct the EMI from their bank\n"
+            "    account or mandate, say so plainly here (this is how auto-debit is recorded).\n"
+            "- target_date: YYYY-MM-DD — any future date the customer said they'd pay by\n"
+            "    (full or remainder). Compute relative dates ('kal','parso','next week') off\n"
+            "    today. Include whenever the customer named/implied a pay date.\n"
+            "- partial_amount: rupee number as string — the amount the CUSTOMER said they can\n"
+            "    pay now (the bot never offers amounts, so it must be customer-stated).\n"
+            "- cannot_pay_reason: 5-15 word English summary of why the customer cannot pay,\n"
+            "    whenever they gave any reason. Use 'uncooperative' if evasive/no real reason.\n"
             "- already_paid_date: YYYY-MM-DD — date the customer claims they already paid.\n"
-            "    Only when hangup_reason == 'already_paid_noted'.\n"
-            "- already_paid_mode: UPI / NEFT / IMPS / RTGS / cash / cheque / card / netbanking.\n"
-            "    Only when hangup_reason == 'already_paid_noted' AND the customer named the mode.\n"
+            "- already_paid_mode: UPI / NEFT / IMPS / RTGS / cash / cheque / card / netbanking\n"
+            "    — whenever the customer named how they paid.\n"
             "\n"
-            "Dates must be ISO YYYY-MM-DD. Omit unknown fields. Output ONLY the JSON object."
+            "Dates must be ISO YYYY-MM-DD. Omit fields the customer never stated (except\n"
+            "summary, which is required). Output ONLY the JSON object."
         )
         resp = await oai_llm.chat.completions.create(
             model=LLM_MODEL,
@@ -145,6 +130,9 @@ async def finalize_call_variables(
     except Exception as exc:
         log.warning("finalize_call_variables error: %s", exc)
 
-    return {
-        "summary": f"Call ended ({hangup_reason}). Context keys: {', '.join(ctx.keys())}.",
+    # LLM path failed — still return a non-null intent + backfilled ctx values.
+    fallback = {
+        "summary": f"Call ended ({hangup_reason}).",
     }
+    _backfill_from_ctx(fallback, hangup_reason, ctx)
+    return fallback
